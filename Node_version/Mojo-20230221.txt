@@ -11,12 +11,13 @@ DL8FCL-7     5457     499
 DU3TW-1      5457     504
 EA1CYZ-5     5457     499
 EA2CW-2      5457     499
+EA2CW-3      5457      No
 EA2RCF-5     5457     499
-EA2RKS-2     5457     499
 EA3CV-2      5457     497
 EA3CV-3      5457     Yes
 EA4FIT-2     5457     451
 EA4RCH-5     5457     496
+EA4RCR-2     5457     445
 EA4URE-2     5457     497
 EA4URE-3     5457     497
 EA4URE-5     5457     497
@@ -24,12 +25,10 @@ EA4URE-6     5457     497
 EA4URE-7     5457     497
 EA6VQ-1      5457     451
 ED1ZAC-5     5457     499
-EI0M-4       5457     495
 EI7MRE       5457     499
 EI7MRE-2     5457     499
 EI7SDX       5457     499
 F1MAC-6      5457     497
-F1MAC-7      5457     497
 F4BWT-3      5457     499
 F4EYQ-1      5457     497
 F4IAA-3      5457     499
@@ -37,20 +36,22 @@ F6BVP-3      5457     499
 G3LRS-2      5457     497
 G4ELI-9      5457     499
 G6NHU-2      5457     499
-GB7BAA       5457     499
+GB7BAA       5457     497
 GB7DJK       5457     497
 GB7DXG-1     5457     499
 GB7HTL       5457     499
 GB7MBC       5457     497
 GB7MRS       5457      No
 GB7NHR       5457     499
+GB7RAU       5457     496
 GB7UJS       5457     499
 GB7VAX       5457     499
+HB9DRV-9     5457      No
 HB9ON-9      5457     499
 HB9VQQ-2     5457     499
 HG8PRC       5457     499
 I0OJJ-6      5457     499
-I3ITX-6      5457     499
+I3ITX-6      5457     484
 I8ZSE-1      5457     496
 IK2WAD-6     5457     499
 IK4ICZ-6     5457     491
@@ -62,20 +63,23 @@ IK6XMI-6     5457     451
 IK7IMO-6     5457     483
 IK7NXU-6     5457     499
 IK8HJC-6     5457     499
+IQ1LA-6      5457      No
 IQ2LB-6      5457     499
 IQ8DO-6      5457     451
+IT9LIZ-2     5457     499
 IU1BOW-2     5457     499
 IU4QTF-9     5457     499
+IV3BVK-5     5457     499
 IV3JDV-6     5457     497
 IV3SCP-6     5457     497
 IW0HLG-3     5457     499
 IW1PSC-6     5457     497
 IW2NOY-2     5457     396
-IW3FVZ-6     5457     499
 IW5ECF-6     5457     279
 IW9EDP-6     5457     499
 IZ0FKE       5457     499
 IZ0FKE-6     5457     497
+IZ0UIN-6     5457     499
 IZ3MEZ-8     5457     484
 IZ5FSA-6     5457     499
 IZ5IIN-6     5457     499
@@ -87,8 +91,6 @@ JE3YEK       5457     499
 JG1VGX-9     5457     497
 JG1YGH-15    5457      No
 K4HNT-2      5457     499
-K4UJ         5457     483
-K4UJ-3       5457     440
 K4ZR         5457     499
 KB2SSE-2     5457     499
 KB3CMT-2     5457     499
@@ -100,7 +102,7 @@ KF2FK-1      5457     497
 KM3T-10      5457     491
 KM8V         5457     491
 LU9DA-6      5457     499
-M0IPU-4      5457     499
+M0IPU-4      5457     497
 MX0NCA-2     5457     499
 N2KI         5457     499
 N2WLS-5      5457     499
@@ -112,7 +114,6 @@ NI1L-2       5457     497
 NP3N         5457     499
 NR0Q-2       5457     499
 NX9G         5457     491
-NX9G-6       5457      No
 OH1RCF       5457     499
 OH2J         5457     499
 ON0AN        5457     499
@@ -145,8 +146,6 @@ SK3W-6       5457     497
 SM4ONW-14    5457     499
 SM4ONW-6     5457     499
 SM4UZM-1     5457     451
-SM6HOC-2     5457     499
-SM6HOC-6     5457     499
 SM7GVF-6     5457     499
 SM7IUN-1     5457     499
 SQ3MZM-3     5457     499
@@ -175,6 +174,6 @@ WR3D         5457     497
 ZL2AQY-10    5457     499
 ZL2ARN-10    5457     499
 
-Total: 176
+Total: 175
 
-Wed Feb 22 07:46:26 UTC 2023
+Tue Feb 21 07:43:36 UTC 2023
