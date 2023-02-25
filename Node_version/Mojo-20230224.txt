@@ -46,7 +46,6 @@ GB7HTL       5457     499
 GB7MBC       5457     499
 GB7MRS       5457      No
 GB7NHR       5457     499
-GB7RAU       5457     496
 GB7UJS       5457     499
 GB7VAX       5457     499
 HB9DRV-9     5457      No
@@ -62,12 +61,14 @@ IK5PWJ-6     5457     499
 IK5ZUK-6     5457     499
 IK6IHL-6     5457     499
 IK6XMI-6     5457     451
+IK7IMO-6     5457     483
 IK7NXU-6     5457     499
 IK8HJC-6     5457     499
-IQ1LA-6      5457     499
 IQ2LB-6      5457     499
 IQ8DO-6      5457     451
 IU1BOW-2     5457     499
+IU4QTF-9     5457     499
+IV3BVK-5     5457     499
 IV3JDV-6     5457     497
 IV3SCP-6     5457     497
 IW0HLG-3     5457     499
@@ -88,13 +89,14 @@ IZ7AUH-6     5457     499
 IZ8BRI-6     5457     497
 IZ8MBW-6     5457     499
 JE3YEK       5457     499
-JG1VGX-9     5457     499
+JG1VGX-9     5457     497
 JG1YGH-15    5457      No
 K4HNT-2      5457     499
 K4UJ         5457     483
 K4UJ-1       5457     491
 K4UJ-3       5457     440
 K4ZR         5457     499
+K4ZR-5       5457     499
 KB2SSE-2     5457     499
 KB3CMT-2     5457     499
 KB5VJY-3     5457     451
@@ -123,7 +125,6 @@ ON0AN        5457     499
 ON0DXC       5457     441
 ON0NOL-9     5457     491
 ON3URE-2     5457     451
-OZ5BBS-7     5457     497
 PA0ESH-3     5457     497
 PA1RBZ       5457     499
 PA2SQ-1      5457     383
@@ -156,6 +157,7 @@ SM7IUM-1     5457      No
 SM7IUN-1     5457     499
 SQ3MZM-3     5457     499
 SR4DXC       5457     497
+SV1CMG-2     5457     Yes
 SV5BYR-7     5457     499
 SV5FRI-1     5457     499
 SY3DEO-1     5457     499
@@ -167,13 +169,12 @@ VE3EY-7      5457     499
 VE3TOK-1     5457     499
 VE3XPG-3     5457     499
 VE3ZIN-2     5457     496
-VE9SC        5457     499
 VK2AZ-2      5457     499
 VK7HDM-2     5457     499
 W1DX         5457     499
 W1NR         5457     499
 W1NR-6       5457     497
-W1WRA-2      5457     499
+W1WRA-2      5457     497
 W5CMM-1      5457     497
 W8BS-2       5457     499
 W9AEK-9      5457     499
@@ -183,6 +184,6 @@ WR3D         5457     497
 ZL2AQY-10    5457     499
 ZL2ARN-10    5457     499
 
-Total: 184
+Total: 185
 
-Sat Feb 25 07:20:07 UTC 2023
+Fri Feb 24 05:12:40 UTC 2023
