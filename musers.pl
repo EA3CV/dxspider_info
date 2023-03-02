@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20230302 v1.2
+# 20230302 v1.3
 #
 
 use strict;
@@ -20,7 +20,7 @@ return 1 unless $self->priv >= 5;
 my $tnow = time();
 my $all_users = 0;
 my @out = (" ", " List of Connected Users:", " ", " Callsign  R P  Type       Connection Time",
-           " --------  - -  ---------  ---------------");
+                                                  " --------  - -  ---------  ---------------");
 
 foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my $call = $dxchan->call();
@@ -33,13 +33,13 @@ foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my $ip = '';
     my $time_on;
 
-    if ($dxchan->is_node) {
+    if ($dxchan->is_node || $dxchan->is_rbn) {
         $sort = "DXSP" if $dxchan->is_spider;
         $sort = "CLX " if $dxchan->is_clx;
         $sort = "DXNT" if $dxchan->is_dxnet;
         $sort = "AR-C" if $dxchan->is_arcluster;
         $sort = "AK1A" if $dxchan->is_ak1a;
-#       $sort = "RBN " if $dxchan->is_rbn;
+        $sort = "RBN " if $dxchan->is_rbn;
     } else {
         $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
         $sort = "WEB " if $dxchan->is_web;
