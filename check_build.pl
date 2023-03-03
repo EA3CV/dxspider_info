@@ -32,7 +32,7 @@ my @out;
 chdir '/spider' or die "Failed to change directory: $!";
 
 my $remote_status = `git remote show origin`;
-my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo   pushes to mojo   \(up to date|mojo   publica a mojo   \(desactualizado local/i;
+my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo pushes to mojo \(local out of date|mojo publica a mojo  \(desactualizado local/i;
 
 if ($has_new_build) {
     $res = "There is a new build";
