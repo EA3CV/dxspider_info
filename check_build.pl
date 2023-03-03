@@ -54,7 +54,7 @@ if ($has_new_build) {
 			my $load = "*$self->{mycall}*   💾  *Backup Starts*";
 			is_tg($load);
 
-			system("rsync -zavh --exclude='/local_data/*' $main::root/ $backup_dir/$date.backup.z");
+			system("rsync -zavh --exclude='/local_data/debug /local_data/log /local_data/spots' $main::root/ $backup_dir/$date.backup.z");
 
 			$load = "*$self->{mycall}*   🆗  *Backup Completed*";
 			is_tg($load);
