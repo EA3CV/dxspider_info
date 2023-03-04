@@ -13,7 +13,7 @@ EA1CYZ-5     5457     505
 EA2RCF-5     5457     511
 EA2RKS-2     5457     506
 EA3CV-2      5457     511
-EA3CV-3      5457     Yes
+EA3CV-3      5457     511
 EA4FIT-2     5457     451
 EA4RCH-5     5457     506
 EA4URE-2     5457     511
