@@ -35,8 +35,6 @@ chdir "$main::root";
 my $remote_status = `git remote show origin`;
 my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo   \(local out of date\)|mojo publica a mojo  \(desactualizado local\)/i;
 
-print $has_new_build;
-
 if ($has_new_build) {
     $res = "There is a new build";
     dbg('DXCron::spawn: $res') if isdbg('cron');
@@ -93,4 +91,3 @@ sub is_tg
 }
 
 return (1, @out);
-#print @out;
