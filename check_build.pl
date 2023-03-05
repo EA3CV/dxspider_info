@@ -13,7 +13,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20230304 v1.10
+# 20230305 v1.11
 #
 
 use DXDebug;
@@ -33,7 +33,7 @@ my @out;
 chdir "$main::root";
 
 my $remote_status = `git remote show origin`;
-my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo   \(local out of date\)|mojo publica a mojo  \(desactualizado local\)/i;
+my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo   \(local out of date\)|publica a mojo   \(desactualizado local\)/i;
 
 if ($has_new_build) {
     $res = "There is a new build";
