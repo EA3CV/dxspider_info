@@ -13,7 +13,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20230304 v1.12
+# 20230306 v1.12a
 #
 
 use DXDebug;
@@ -35,6 +35,7 @@ chdir "$main::root";
 #my $remote_status = `git remote show origin`;
 #my $has_new_build = $remote_status =~ /mojo/i && $remote_status =~ /mojo   \(local out of date\)|publica a mojo   \(desactualizado local\)/i;
 
+`git remote update`;
 my $local_repo = `git rev-parse \@`;
 my $remote_repo = `git rev-parse \@{u}`;
 
