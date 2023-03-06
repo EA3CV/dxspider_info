@@ -23,6 +23,7 @@ DK7ET-5      5455      No
 DL1FLW-1     5455     249
 DQ8Z         5455     204
 EA2URV-5     5455     115
+EA3KZ-5      5455      No
 EA5URM-5     5455      No
 EA6VQ-2      5455      38
 EA7URG-5     5455     196
@@ -48,6 +49,7 @@ HA6DX        5455      32
 HB9IAC-8     5455     115
 HG6DXC       5455      No
 HI3AA-3      5455     199
+I0INU-6      5455     216
 I0OJJ-6      5455     250
 IK2DUW-6     5455     166
 IK4PKL-6     5455     115
@@ -59,13 +61,17 @@ IQ8XF        5455     249
 IR2UGI-5     5455     250
 IR2UGI-6     5455     249
 IR4FOC-6     5455     216
-IR4U-6       5455      48
+IR4U-6       5455     216
 IT9FTP-6     5455     250
+IT9OBK-6     5455      No
+IU1OLU-5     5455     249
 IW1QLH-6     5455     163
 IW2EVH-6     5455     171
 IW8PGT-9     5455     115
 IW9FDD-6     5455      82
+IW9HHF-8     5455     216
 IZ0AWG-6     5455     115
+IZ0ORT-6     5455     216
 IZ5ILU-6     5455     198
 IZ6RND-6     5455      No
 IZ8DMZ-6     5455     171
@@ -75,7 +81,6 @@ K2LS         5455      82
 K8QIK-3      5455      80
 KA2PBT-1     5455     197
 KB8UVN-2     5455      73
-KC5PQX-9     5455     249
 KC9AOP-1     5455     250
 KY9J-2       5455     250
 LW2DQC-6     5455     215
@@ -83,7 +88,6 @@ LZ0DXC       5455     249
 MB6WV        5455     215
 MX0ONL       5455     115
 N0CDA-1      5455     250
-N0VD         5455     181
 N0VD-7       5455     181
 N5WLS-1      5455     217
 N5WLS-2      5455     217
@@ -91,15 +95,16 @@ N8NM         5455     249
 NA7KR-3      5455     250
 NL7S         5455     250
 NN1D         5455      92
-NR1X-3       5455      No
 OK0DXI       5455      52
 OK2CQR-1     5455     250
 ON0LLV-5     5455     249
 ON4KST-2     5455     250
 PY1NB-4      5455     197
 PY1TSP-1     5455     197
+PY2ZEN-6     5455     250
 PY3NZ-8      5455     115
 PY5JO-11     5455     115
+R2DGO-1      5455     190
 RA3ATX-8     5455     115
 SK6AW-2      5455     166
 SM6EAT-6     5455     249
@@ -109,18 +114,18 @@ SM6YOU-7     5455      82
 SR2PUT       5455     197
 SR9DDF-12    5455     200
 SV1IW-9      5455     141
-SV2HRT-1     5455     115
 UA4CC        5455     115
 VE1CFB       5455      38
 VE2PKT-9     5455     166
 VE3MIS-2     5455     250
 VE6DXC       5455     100
+W1NR-9       5455     250
+W6RFU        5455     216
 W6RGG-2      5455      89
 W9AEK        5455     158
 WT3Q         5455     136
-WW1R         5455      No
 WW1R-9       5455      82
 
-Total: 122
+Total: 127
 
-Mon Mar  6 11:41:43 UTC 2023
+Sat Mar  4 07:48:52 UTC 2023
