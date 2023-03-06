@@ -3,11 +3,15 @@
 #
 # Send all incoming traffic to MQTT/JSON
 # From build 431 and up
+# 
+# Need DXLog.pm module modified in spider/local
+# Need to modify DXVars.pm to add $id & $token
 #
 # Modified by Kin EA3CV with the inestimable help of Dirk
-# ea3cv@cronux.net
 #
-# 20230208 v6.2
+# Kin ea3cv@cronux.net
+#
+# 20230306 v6.3
 #
 
 package Local;
@@ -315,19 +319,29 @@ sub log_msg
 
         # 1641110665^DXCommand^SK0MMR connected from 216.93.248.68
         # 1643657664^RBN^RBN: no input from SK0MMR, disconnecting
-        # 1672531877^DXProt^VE7CC-1 Disconnected
-        # 1672533001^DXProt^VE7CC-1 connected from 70.68.10.169
-        # 1606290021^^OE3GCU has too many connections (3) at HA6DX,VE7CC-1,N6WS-6 - disconnected
+        # 1672531877^DXProt^EA2CW-2 Disconnected
+        # 1672533001^DXProt^EA2CW-2 connected from 44.68.10.169
+        # 1606290021^^OE3GCU has too many connections (3) at EA4URE-2,EA2CW-2,N6WS-6 - disconnected
 
         # Users - connected/disconnected
-        if ($fields[1] eq "DXCommand") {
-                if ($2 eq "connected") {
-                        $texto = "*$node*   ✅  *$1* Connect \(*U*\)";
-                        telegram($texto);
-                } elsif ($2 eq "disconnected") {
-                        $texto = "*$node*   ❌  *$1* Disconnect \(*U*\)";
-                        telegram($texto);
-                }
+	my $modo = 'event';  # Puede ser 'event' or 'summary' 
+
+	if ($fields[1] eq "DXCommand") {
+		if ($2 eq "connected") {
+		        $texto = "*$node*   ✅  *$1* Connect \(*U*\)";
+        		if ($modo eq 'event') {
+		            telegram($texto);  # Enviar mensaje por cada evento
+		        } else {
+		            update_count($1, 'connected', $node);  # Actualizar contador para resumen
+		        }
+		} elsif ($2 eq "disconnected") {
+		        $texto = "*$node*   ❌  *$1* Disconnect \(*U*\)";
+		        if ($modo eq 'event') {
+				telegram($texto);  # Enviar mensaje por cada evento
+		        } else {
+				update_count($1, 'disconnected', $node);  # Actualizar contador para resumen
+		        }
+		}
 
         # Nodes - connected/disconnected
         } elsif ($fields[1] eq "DXProt") {
@@ -382,6 +396,35 @@ sub log_msg
         }
 
         return 0;
+}
+
+# Definir un hash para almacenar el recuento de conexiones/desconexiones de usuario
+my %count;
+# Definir una variable para almacenar la hora actual en formato Unix
+my $now = time();
+
+# Función para actualizar el hash de recuento de conexiones/desconexiones
+sub update_count {
+	my ($user, $action, $node) = @_;
+	# Obtener la hora actual en formato Unix
+	my $timestamp = time();
+
+	# Si la hora actual es diferente de la hora almacenada en $now, reiniciar el hash y actualizar la hora
+	if (int($timestamp/3600) != int($now/3600)) {
+		%count = ();
+		$now = $timestamp;
+	}
+	# Incrementar el contador correspondiente en el hash
+	$count{$user}{$action}++;
+
+	# Si el umbral de 10 conexiones/desconexiones se supera en la última hora, enviar un informe por Telegram
+	if ($count{$user}{$action} >= 10) {
+		my $texto = "*$node*  🔟 *$user* Conn/Disconn \(*U*\)";
+		telegram($texto);
+		# Reiniciar el contador correspondiente en el hash
+		$count{$user}{connected} = 0;
+		$count{$user}{disconnected} = 0;
+	}
 }
 
 sub telegram

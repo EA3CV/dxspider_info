@@ -20,9 +20,10 @@
 # 
 # Copyright (c) - 1998 Dirk Koopman G1TLH
 #
+#
 # Modify by Kin EA3CV
-# 
-# 202030124 v0.2
+#
+# 20230304 v0.2
 #
 
 package DXLog;
@@ -215,8 +216,8 @@ sub flushall
 # The user is responsible for making sense of this!
 sub Log
 {
-        my $t = time;
-        $log->writeunix($t, join('^', $t, @_) );
+	my $t = time;
+	$log->writeunix($t, join('^', $t, @_) );
 # Kin
     if (defined &Local::log_msg) {
         my $self = 'Local';
