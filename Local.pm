@@ -11,7 +11,7 @@
 #
 # Kin ea3cv@cronux.net
 #
-# 20230306 v6.3
+# 20230307 v6.3a
 #
 
 package Local;
@@ -33,7 +33,7 @@ use vars qw{$mqtt $json};
 # called at initialisation time
 sub init
 {
-        $mqtt = Net::MQTT::Simple->new("localhost:1883");
+#        $mqtt = Net::MQTT::Simple->new("localhost:1883");
 }
 
 
