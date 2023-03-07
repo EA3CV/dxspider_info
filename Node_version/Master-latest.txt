@@ -23,6 +23,7 @@ DK7ET-5      5455      No
 DL1FLW-1     5455     249
 DQ8Z         5455     204
 EA2URV-5     5455     115
+EA3KZ-5      5455      No
 EA5URM-5     5455      No
 EA6VQ-2      5455      38
 EA7URG-5     5455     196
@@ -38,16 +39,15 @@ F6KVP-3      5455     141
 F8KHI-3      5455     198
 G7VJR-5      5455     250
 GB7BEX-9     5455     204
-GB7DXC-5     5455     249
 GB7DXX       5455     115
 GB7DXX-5     5455     115
-GB7DXY       5455     115
 GB7IPF       5455     198
 HA5KDR-3     5455     249
 HA6DX        5455      32
 HB9IAC-8     5455     115
 HG6DXC       5455      No
 HI3AA-3      5455     199
+I0INU-6      5455     216
 I0OJJ-6      5455     250
 IK2DUW-6     5455     166
 IK4PKL-6     5455     115
@@ -61,11 +61,15 @@ IR2UGI-6     5455     249
 IR4FOC-6     5455     216
 IR4U-6       5455      48
 IT9FTP-6     5455     250
+IT9OBK-6     5455      No
+IU1OLU-5     5455     249
 IW1QLH-6     5455     163
 IW2EVH-6     5455     171
 IW8PGT-9     5455     115
 IW9FDD-6     5455      82
+IW9HHF-8     5455     216
 IZ0AWG-6     5455     115
+IZ0ORT-6     5455     216
 IZ5ILU-6     5455     198
 IZ6RND-6     5455      No
 IZ8DMZ-6     5455     171
@@ -85,13 +89,10 @@ MX0ONL       5455     115
 N0CDA-1      5455     250
 N0VD         5455     181
 N0VD-7       5455     181
-N5WLS-1      5455     217
-N5WLS-2      5455     217
 N8NM         5455     249
 NA7KR-3      5455     250
 NL7S         5455     250
 NN1D         5455      92
-NR1X-3       5455      No
 OK0DXI       5455      52
 OK2CQR-1     5455     250
 ON0LLV-5     5455     249
@@ -100,6 +101,7 @@ PY1NB-4      5455     197
 PY1TSP-1     5455     197
 PY3NZ-8      5455     115
 PY5JO-11     5455     115
+R2DGO-1      5455     190
 RA3ATX-8     5455     115
 SK6AW-2      5455     166
 SM6EAT-6     5455     249
@@ -115,12 +117,13 @@ VE1CFB       5455      38
 VE2PKT-9     5455     166
 VE3MIS-2     5455     250
 VE6DXC       5455     100
+W1NR-9       5455     250
+W6RFU        5455     216
 W6RGG-2      5455      89
 W9AEK        5455     158
 WT3Q         5455     136
-WW1R         5455      No
 WW1R-9       5455      82
 
-Total: 122
+Total: 125
 
-Mon Mar  6 11:41:43 UTC 2023
+Tue Mar  7 07:48:02 UTC 2023
