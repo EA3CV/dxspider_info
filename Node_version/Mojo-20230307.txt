@@ -15,13 +15,14 @@ EA2CW-3      5457     513
 EA2RCF-5     5457     513
 EA2RKS-2     5457     513
 EA3CV-2      5457     513
-EA3CV-3      5457     Yes
+EA3CV-3      5457     513
 EA4FIT-2     5457     451
 EA4RCH-5     5457     506
 EA4RCR-2     5457     445
-EA4URE-3     5457     511
-EA4URE-5     5457     511
-EA4URE-7     5457     511
+EA4URE-3     5457     513
+EA4URE-5     5457     513
+EA4URE-6     5457     513
+EA4URE-7     5457     513
 EA6VQ-1      5457     451
 ED1ZAC-5     5457     506
 EI7MRE       5457     511
@@ -195,6 +196,6 @@ WB3FFV-2     5457     497
 WR3D         5457     512
 ZL2ARN-10    5457     499
 
-Total: 196
+Total: 197
 
-Tue Mar 14 07:35:12 UTC 2023
+Tue Mar  7 07:48:08 UTC 2023
