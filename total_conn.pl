@@ -34,7 +34,7 @@ my %connection_count;
 my %spot_count;
 
 # Iteramos a través de los archivos de registro
-foreach my $file (glob("/root/volumenes/dxspider/nodo-2/local_data/log/$current_year/*.dat")) {
+foreach my $file (glob("/spider/local_data/log/$current_year/*.dat")) {
 
     # Abrimos el archivo y lo leemos línea por línea
     open(my $fh, "<", $file) or die "No se pudo abrir el archivo $file: $!";
