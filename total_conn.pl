@@ -9,9 +9,10 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20200422 v0.2
+# 20200423 v0.3
 #
 
+use 5.10.0;
 use strict;
 use warnings;
 
@@ -35,6 +36,7 @@ my %spot_count;
 
 # Iteramos a través de los archivos de registro
 foreach my $file (glob("/spider/local_data/log/$current_year/*.dat")) {
+#foreach my $file (glob("/root/volumenes/dxspider/nodo-2/local_data/log/$current_year/*.dat")) {
 
     # Abrimos el archivo y lo leemos línea por línea
     open(my $fh, "<", $file) or die "No se pudo abrir el archivo $file: $!";
@@ -69,7 +71,7 @@ foreach my $file (glob("/spider/local_data/log/$current_year/*.dat")) {
         # Contamos los spots que contiene ^cmd^ y |dx|
         if ($line =~ /\^cmd\^(\S+)\|dx\|/) {
             my $call = $1;
-            $call =~ s/-.*//;
+            $call =~ s/\|.*//;
             $spot_count{$call}++;
         }
     }
