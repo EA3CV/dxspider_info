@@ -9,8 +9,16 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20200423 v0.3
+# 20200423 v0.3a
 #
+
+# Call       Connected  Spots  Total Time
+# ---------  ---------  -----  --------------------
+# EA3GOP     87         0       28 d 08 h 44 m 09 s
+# EA3IMR     9          7       27 d 06 h 29 m 54 s
+# EA3HLM     288        6       19 d 09 h 36 m 04 s
+# EA5JN      33         169     17 d 13 h 54 m 15 s
+# KC1CAB     56         0       12 d 23 h 10 m 16 s
 
 use 5.10.0;
 use strict;
