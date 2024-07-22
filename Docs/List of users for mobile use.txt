@@ -1,0 +1,54 @@
+List of users for mobile use
+****************************
+
+Shows a list of users connected to the node reporting:
+
+If the user is registered with an R Type of USER which can be either EXT or LOCL And the duration of the session.
+
+This command has been created to be used from a mobile app. It is possible to use it from a terminal or from console.
+
+It may be necessary to install the Date:Manip module.
+
+	# Debian or similar
+	apt install libdate-manip-perl
+or
+
+	# Alternative
+	cpanm install Date:Manip
+	
+The script is called muser.pl
+
+Using the sysop user, it has to be copied to:
+
+	/spider/local_cmd
+	
+To run it use
+
+	muser
+	
+or
+
+	mu
+	
+The output would look something like this example:
+
+	List of connected Users:
+
+	Callsign  R P  Type       Connection Time
+	--------  - -  ---------  ---------------
+	CT7AGM-1       USER EXT    0 d   0 h  11 m
+	EA1FU-1   R P  USER EXT    0 d   1 h   9 m
+	EA3CV     R P  USER LOCL   0 d   4 h  42 m
+	EA3GOP         USER EXT    0 d   6 h  56 m
+	EA4HPI         USER EXT    0 d   0 h   8 m
+	EA5GST         USER EXT    1 d   2 h   0 m
+	EA5JN     R P  USER EXT    0 d   3 h  27 m
+	EA8DLF         USER EXT    0 d   0 h  30 m
+	EC3ALS         USER EXT    8 d   0 h   1 m
+	F6DAY          USER EXT    0 d   2 h  55 m
+	SK0MMR         USER RBN    2 d   8 h  38 m
+	SK1MMR         USER RBN    6 d  12 h  42 m
+
+	  Users:  10
+
+It can be downloaded at https://raw.githubusercontent.com/EA3CV/dxspider_info/main/musers.pl

@@ -1,0 +1,27 @@
+Configure node with Dynamic IP (Mojo branch)
+********************************************
+
+Introduce aliasing for localhost in DX Spots and outgoing PC92 A records on login. There are two variables which can be set with the alias to use:
+
+	$main::localhost_alias_ipv4
+	$main::localhost_alias_ipv6
+
+These can be set in the /spider/scripts/startup
+
+	set/var $main::localhost_alias_ipv4 = "your_IP"
+
+but this is only necessary if the node has more than one interface, virtual hosts or Dynamic IP.
+
+You can check what your IP is with the following command:
+
+	curl ifconfig.me
+
+For this variable to work, you must run it the first time:
+
+	set/var $main::localhost_alias_ipv4 = "2.2.2.2"
+
+If there is ONLY ONE ipv4 and/or ipv6 Static IP address on the node machine then these variables will be automatically populated on first use. But the SAFE thing to do is to set them in the startup file.
+
+There is a script called update_ip.pl (in contributions) that automatically updates this variable.
+
+It can be downloaded at https://raw.githubusercontent.com/EA3CV/dxspider_info/main/update_ip.pl

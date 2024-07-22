@@ -1,0 +1,51 @@
+List of nodes for mobile use
+****************************
+
+Displays a list of connected nodes reporting:
+
+	Type of NODE
+	And the duration of the connection
+	
+This command has been created to be used from a mobile app. It is possible to use it from a terminal or from console.
+
+It may be necessary to install the Date:Manip module.
+
+	# Debian or similar
+	apt install libdate-manip-perl
+	
+or
+
+	# Alternative
+	cpanm install Date:Manip
+	
+The script is called mnode.pl
+
+Using the sysop user, it has to be copied to:
+
+	/spider/local_cmd
+	
+To run it use
+
+	mnode
+	
+or
+
+	mn
+	
+The output would look something like this example:
+
+List of connected Nodes:
+
+	Callsign  R P  Type       Connection Time
+	--------  - -  ---------  ---------------
+	AE5E           NODE DXSP  9 d   1 h  37 m
+	EA2CW-2   R P  NODE DXSP  0 d   7 h  28 m
+	EA2RCF-5  R P  NODE DXSP  3 d  19 h  46 m
+	EA3CV-2        NODE DXSP  9 d   8 h  50 m
+	EA4URE-5  R P  NODE DXSP  9 d   8 h  37 m
+	F4EYQ-1   R P  NODE DXSP  3 d   5 h  32 m
+	IW9EDP-6  R P  NODE DXSP  2 d   4 h  27 m
+
+	  Nodes:  7
+	  
+It can be downloaded at https://raw.githubusercontent.com/EA3CV/dxspider_info/main/mnodes.pl

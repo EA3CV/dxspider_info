@@ -1,0 +1,115 @@
+Node configuration for user access
+**********************************
+
+1. User Registration
+
+There are two types of user in a DXSpider node, a registered user and an unregistered user. By default, all users belong to the unregistered category.
+
+2. Node in UNREGISTERED Mode
+
+This is the default way of working, but not necessarily the best.
+
+The global variable that sets the node type is $main::reqreg and its default value is 0.
+
+	set/var $main::reqreg = 0
+  
+In this mode the sysop doesn't have to register users, but if they are registered, then it will simply be a database entry. Both types of user will have the same capabilities to send and receive SPOTS, ANN, etc
+
+3. Node in REGISTRATION Mode
+
+To activate registration, the global variable $main::reqreg must be set to 1. The way to change it is
+
+	set/var $main::reqreg = 1
+	
+When this mode is activated, only users that the sysop has registered will be able to send and receive SPOTS, ANN, etc. Unregistered users will only be able to receive information.
+
+The way to register/unregister a user is as follows:
+
+	set/register <call>
+	unset/register <call>
+	
+You can check which users we have registered using
+
+	sh/register <call>
+	
+A specific login banner for registered users can be shown. The file containing it is the following
+
+	/spider/_local_data/motd
+  
+When an unregistered user starts the login process, they can be sent a different file that can be configured to say that they are not registered and how to register should they wish to do so. This file is ...
+
+	/spider/local_data/motd_nor
+
+4. Password Usage
+
+By default, a user does not get prompted for a password at login. For additional security, a user can request a password be set for them. They simply need to request a password that they provide to the sysop.
+
+It should be noted that this only works on the node they regularly use. Their password is not propagated across the network for security reasons.
+
+For a user to be assigned a password, the sysop needs to use the command ...
+
+	set/password <call> <string>
+	
+and the user can change his password with the command
+
+	set/password
+		Enter old password:
+		Enter new password:
+		Re-enter new password:
+		Password changed
+		
+5. Node in NO PASSWORD Mode
+	
+The global variable $main::passwdreq is set to 0 by default. This does not mean that they cannot have a password set, only that users are not forced to have a password.
+
+
+To see the value of the variable use ...
+
+	sh/var $main::passwdreq
+	
+6. Node in PASSWORD Mode
+
+If we set the $main::passwdreq variable to 1, we will force any user logging in to the node to use a password as well as their callsign, otherwise they will not be able to access the node.
+
+The node will not establish the session if there is no positive authentication.
+
+To set this mode of operation:
+
+	set/var $main::passwdreq = 1
+	
+7. How To protect your cluster node (Recommended configuration)
+
+One way to control the correct use of our node, is to use the combination of registration and password as follows.
+
+We enable the registration for all the users
+
+	set/var $main::reqreg = 1
+  
+The beauty of this is that people who try to login with callsigns like ID1OT or even using random callsigns cannot post spots or announcements from the node.
+
+Unless the cluster node is a small club node or similar, it is probably a good idea not to force people to have a password. It may put some people off and it will be a LOT of work for the sysop. Most users will be protected by registration
+
+	set/var $main::passwdreq = 0
+	
+Of course, a user may wish to have a password set to increase their security on the node, meaning that unless someone also knows the password, their call cannot be used by someone else unless they know the password.
+
+	set/register <call>
+	set/password <call> <string>
+  
+It is strongly suggested that sysops enable registration to try and combat the increasing misuse on the cluster network
+
+8. Make Changes Permanent
+
+Although sysops can enable or disable these variables at any time from the console, this will only be enabled until the node is restarted. if we want to keep them during the startup of the node, we must edit the file ...
+
+	/spider/scripts/startup
+	
+and include the following lines
+
+	set/var $main::reqreg = 1
+	set/var $main::passwdreq = 0
+	
+The changes to this file will not take effect until there is a reboot, so we can activate it manually the first time from the console by typing
+
+	set/var $main::reqreg = 1
+	set/var $main::passwdreq = 0

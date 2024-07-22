@@ -1,0 +1,35 @@
+Configure Node with more than one local IP (Mojo branch)
+********************************************************
+
+NOTE: You do NOT need to fiddle with this unless you specifically have more than just the normal definitions of localhost. So for 'normal' nodes with one external interface, YOU DO NOT NEED TO DO ANY OF THIS.
+
+If you need to configure a node with more than one local IP address, you can do this in the Mojo branch. This allows other IP addresses to be treated in the same way as localhost.
+
+These can be set in the /spider/scripts/startup file.
+
+The variable @main::localhost_names is used to achieve this.
+
+You must include ALL the normal localhost names + any other interface names that you might want to include:
+
+	set/var @main::localhost_names ('127.0.0.1', '::1', '192.168.1.30', '172.16.0.20')
+	
+You can simplify this by using the qw() option, like this ...
+
+	set/var @main::localhost_names qw(127.0.0.1 ::1 192.168.1.30 172.16.0.20)
+	
+but either will work. You can define as many IP addresses as you like and they can be IPV4 or 6.
+
+
+To find the Local IPs you can use the following command at the command line:
+
+	hostname -I
+
+You can also update the cluster immediately by adding the following line in the console:
+
+	set/var @main::localhost_names qw(127.0.0.1 ::1 192.168.1.30 172.16.0.20)
+
+Again, remember You do NOT need to fiddle with this unless you specifically have more than just the normal definitions of localhost. So for 'normal' nodes with one external interface, YOU DO NOT NEED TO DO ANY OF THIS.
+
+There is a script called update_ip.pl (in contributions) that automatically updates this variable.
+
+It can be downloaded at 

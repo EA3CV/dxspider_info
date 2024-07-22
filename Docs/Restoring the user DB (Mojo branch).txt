@@ -1,0 +1,20 @@
+Restoring the user DB (Mojo branch)
+***********************************
+
+From the command line as sysop user:
+
+Stopped service
+
+	sudo service dxspider stop
+	
+Change to the directory that contains the user backup: user_json
+
+	cd /spider/local_data
+ 
+Run regeneration of users.v3j
+
+	perl user_json
+	
+Start cluster service
+
+	sudo service dxspider start
