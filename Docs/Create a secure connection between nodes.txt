@@ -1,0 +1,71 @@
+Create a secure connection between nodes
+****************************************
+
+In order to avoid possible impersonation, it is necessary that connections between neighbouring nodes are made with authentication.
+
+The steps to follow are
+
+	1. Register node
+	2. Assign password to the node
+	3. Set node type
+	
+Although it is not necessary for both nodes to have authentication enabled, it is desirable.
+
+The following is an example of how it is implemented at one endpoint
+
+Scenario
+
+	Node-A: XX0XX-2                    Node-B: ZZ8ZZ-4
+	password para ZZ8ZZ-4: A49=Dk4T    password para XX0XX-2: jTra691R
+	node-a.hams.org                    node-b.radio.com
+	port 7300                          port 8000
+	
+Operation in Node-A (XX0XX-2)
+
+	set/register ZZ8ZZ-4
+	set/password ZZ8ZZ-4 A49=Dk4T
+	set/spider ZZ8ZZ-4
+	
+Check if the process has been correct
+
+	stat/user ZZ8ZZ-4
+	
+	Believable nodes: ZZ8ZZ-4
+			 Buddies:
+			Callsign: ZZ8ZZ-4
+		 Connections: 16Feb2023@10:56:01=0s(5.78.40.70),
+			   Group: local
+		   Home Node: ZZ8ZZ-4
+			Language: en
+		   Last Node: XX0XX-2
+		Last Ping at: XX0XX-2=16Feb2023@15:44:49
+		   Last Seen: 16-Feb-2023 1544Z
+		Last Time in: 16-Feb-2023 1219Z
+		 Locked out?: No
+			Password: Yes
+	 Privilege Level: 1
+		 Registered?: Yes
+	  Seen on PC92 K: Yes
+		  Start Time: 16-Feb-2023 1227Z
+		Type of User: S
+
+On the Node-B (ZZ8ZZ-4) should create a connection script similar to this one
+
+	/spider/connect/XX0XX-2
+	
+	timeout 15
+	connect telnet node-a.hams.org 7300
+	'ogin: ' 'ZZ8ZZ-4'
+	'assword:' 'A49=Dk4T'
+	client XX0XX-2 telnet
+	
+Tested its operation on the Node-B (ZZ8ZZ-4) from console
+
+	conn XX0XX-2
+	
+Check
+
+	sh/conn XX0XX-2
+	
+	Cnum Call      Address/Port              State  Type   Dir.     Module
+	  19 XX0XX-2   100.0.2.55/33074              C  telnet Outgoing ExtMsg
