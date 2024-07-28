@@ -15,6 +15,8 @@
 
     check_build.pl		  Check and install if there is a new build Mojo
                               Send a message via Telegram bot
+			      
+    compression.pl            Compression of the previous day's debug files
 
     mnodes.pl		  List of connected nodes for use from a mobile app
 
