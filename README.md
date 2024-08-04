@@ -56,6 +56,8 @@
 
     set/regpass.pl            Unify the registration + password process in a single command
 
+    spots_node.pl             Utility to see the origin and quantity of spots per day.
+
     unset/regpass.pl          Unify the unregistration + unpassword process in a single command
 
     Docs                      Documents contributed to the DXSpider Wiki:
