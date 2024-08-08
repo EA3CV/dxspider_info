@@ -1,3 +1,6 @@
+Nodes in the Master branch 5455
+Discontinued
+
 9A0DXC       5455     115
 AB2VY-12     5455     250
 AB2VY-2      5455     250
@@ -5,18 +8,13 @@ AB2VY-3      5455     250
 AB2VY-6      5455     250
 AB2VY-7      5455     250
 AI3I-15      5455     203
-CQ0PAX-6     5455     250
-CQ0PCR-6     5455     250
 CQ0REP       5455     250
-CS5NRA-6     5455     250
 CS5SEL-5     5455     250
-CT1EBQ-9     5455     204
 CT1REP       5455     250
 CU3HY-2      5455     166
-DB0ALG-9     5455     250
 DB0HGW-6     5455     250
+DB0PER       5455     250
 DB0SUE-7     5455     136
-DB0UHI-9     5455     166
 DD5XX-10     5455     196
 DG2KBC-1     5455      82
 DJ4PK-2      5455      67
@@ -24,21 +22,21 @@ DK7ET-4      5455     248
 DK7ET-5      5455      No
 DL1FLW-1     5455     250
 EA3KZ-5      5455      No
-EA6VQ-2      5455      38
+EA6VQ-2      5455     Yes
 ED3ZAK-5     5455     250
 EW8AX-1      5455     115
 F4GVE-2      5455     175
 F5LEN-7      5455     166
-F8KHI-3      5455     198
 GB7DXX       5455     115
 GB7DXX-5     5455     115
 GB7DXY       5455     115
 GB7IPF       5455     198
+HA5KDR-3     5455     249
 HB9IAC-8     5455     115
 HI3R-1       5455     250
-I0INU-6      5455     216
 IK2DUW-6     5455     166
 IK4PKL-6     5455     250
+IK7XLW-6     5455     115
 IQ1GP-6      5455     249
 IQ1IM-6      5455     115
 IQ5KG-6      5455      52
@@ -50,7 +48,6 @@ IU1OLU-5     5455     249
 IW0QMN-6     5455     250
 IW1QLH-6     5455     163
 IW8PGT-9     5455     115
-IW9FDD-6     5455      82
 IW9HHF-8     5455     216
 IZ0AWG-6     5455     115
 IZ5ILU-6     5455     250
@@ -60,20 +57,21 @@ JH1RFM-9     5455     216
 K0PIR-2      5455     250
 K2LS         5455      82
 KA2PBT-1     5455     197
-KB2SSE-2     5455     249
+KC5PQX-9     5455     250
 KC9AOP-1     5455     250
 LU3DXG       5455     250
+LW2DQC-6     5455     215
 N0CDA-1      5455      33
 N0VD         5455     181
 N0VD-7       5455     181
-N2YO-2       5455     215
 N4DW-9       5455     249
 NL7S         5455     250
 NN1D         5455      92
+NR1X-3       5455      No
 OK0DXI       5455      52
 ON0DXC       5455     250
 PA9TV-2      5455     250
-PD0SIM-2     5455      No
+PD0SIM-2     5455     250
 PY3NZ-8      5455     115
 PY5JO-11     5455     115
 R2DGO-1      5455     190
@@ -87,11 +85,13 @@ UN1HQ-8      5455     249
 VE1CFB       5455      38
 VE1LG-2      5455     250
 VE3MIS-2     5455     250
+VE6CIC-1     5455     115
+VE6DXC       5455   0.100
 W6RGG-2      5455      89
 WT3Q         5455     136
+YO2LOJ-2     5455     166
 ZL2ARN-10    5455     250
 
-Total: 92
+Total: 90
 
-Wed Jul  3 16:32:16 UTC 2024
-
+Thu Aug  8 11:33:31 UTC 2024
