@@ -15,7 +15,7 @@
 #
 # Kin EA3CV ea3cv@cronux.net
 #
-# 20230203 v0.6
+# 20240926 v0.7
 #
 
 use 5.10.1;
