@@ -26,7 +26,6 @@ use warnings;
 my $ip = `curl -s ifconfig.me`;
 my $ips = `hostname -I`;          # -i para Docker, -I para el resto
 chomp($ip);
-chomp($ips);
 
 my $var1 = 'set/var $main::localhost_alias_ipv4 =';
 $ip = "'$ip'";
@@ -71,7 +70,7 @@ sub startup
         my $arg = shift;
         my $find = shift;
 
-        #my $filename = '/root/volumenes/dxspider/nodo-3/scripts/startup';
+        #my $filename = '/home/sysop/spider/scripts/startup';
         my $filename = '/spider/scripts/startup';
         my @content = path($filename)->lines_utf8;
 
