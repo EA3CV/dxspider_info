@@ -35,6 +35,8 @@
 					SK0MMR         USER RBN    1 d  2 h  23 m
 					SK1MMR         USER RBN    1 d  2 h  23 m
 
+    send_pc92.pl              Utility that informs the rest of the network about the status of the node
+
     total.pl                  Total Nodes/Users sent to the Telegram bot
 
 					EA3CV-2   ➡️  Nodes: 14   Users: 35
