@@ -18,7 +18,7 @@
 			      
     compression.pl            Compression of the previous day's debug files
 
-    conndisc.pl            Reports connections/disconnections or attempted connections to or from nodes.
+    conndisc.pl               Reports connections/disconnections or attempted connections to or from nodes.
     
     mnodes.pl		  List of connected nodes for use from a mobile app
 
