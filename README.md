@@ -58,6 +58,8 @@
 
     undo_newbuild.pl          Revert to the version before the update. Mojo branch only
 
+    view_duples.pl            Search for a string in dupefile  
+
     who.pl                    Another way to view the list of connected stations
 
     set/regpass.pl            Unify the registration + password process in a single command
