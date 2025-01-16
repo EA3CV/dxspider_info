@@ -5,8 +5,9 @@
 # Usage: sh/conndisc
 #
 # Requirements:
-#    Have debug chan and nologchan enabled.
-#    set/debug chan nologchan
+#    Have debug chan and nologchan:
+#    set/debug chan
+#    unset/debug nologchan
 #
 # Installation:
 #    Create if no show directory exists in local_cmd from Linux
@@ -15,7 +16,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250102 v0.0
+# 20250116 v0.1
 #
 
 use strict;
