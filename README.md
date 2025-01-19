@@ -11,7 +11,7 @@
     Local.pm                  Added mqtt, rbn spots, rbn_quality spots, log_msg,
                               user connections/disconnections and telegram
 
-    RBN.pm		          Send info to Local.pm
+    RBN.pm		          Send info to Local.pm and regex filter for zones
 
     check_build.pl		  Check and install if there is a new build Mojo
                               Send a message via Telegram bot
