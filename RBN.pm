@@ -4,7 +4,14 @@
 # Copyright (c) 2020 Dirk Koopman G1TLH
 #
 
-# Modify by Kin EA3CV
+#
+# Kin EA3CV
+#
+# Modification of dx_spot(). Modified logic for filtering by Zones (SComment).
+# The possibility to send RBN points to the Local.pm module is activated.
+#
+# 20250115 v1.0
+#
 
 use warnings;
 use strict;
@@ -26,9 +33,7 @@ use Time::HiRes qw(gettimeofday);
 use Spot;
 use DXJSON;
 use IO::File;
-# Kin
 use Local;
-#
 
 use constant {
                           ROrigin => 0,
@@ -263,14 +268,6 @@ sub normal
                 dbg("RBN: ERROR $call from $origin on $qrg is invalid, dumped");
                 return;
         }
-
-        # is it 'baddx'
-        if ($DXProt::baddx->in($call)) {
-                dbg("RBN: Bad DX spot '$call', ignored");
-                dbg($line) if isdbg('nologchan');
-                return;
-        }
-
 
         # remove all extraneous crap from the origin - just leave the base callsign
         my $norigin = basecall($origin);
@@ -507,82 +504,75 @@ sub send_dx_spot
 
 sub dx_spot
 {
-        my $self = shift;
-        my $dxchan = shift;
-        my $quality = shift;
-        my $cand = shift;
-        my $call = $dxchan->{call};
-        my $strength = 100;             # because it could if we talk about FTx
-        my $saver;
-        my %zone;
-        my $respot;
-        my $qra;
+    my $self = shift;
+    my $dxchan = shift;
+    my $quality = shift;
+    my $cand = shift;
+    my $call = $dxchan->{call};
+    my $strength = 100;             # because it could if we talk about FTx
+    my $saver;
+    my %zone;
+    my $respot;
+    my $qra;
 
-        ++$self->{nousers}->{$call};
-        ++$self->{nousers10}->{$call};
-        ++$self->{nousershour}->{$call};
+    ++$self->{nousers}->{$call};
+    ++$self->{nousers10}->{$call};
+    ++$self->{nousershour}->{$call};
 
-        my $filtered;
-        my $rf = $dxchan->{rbnfilter} || $dxchan->{spotsfilter};
-        my $comment;
+    my $filtered;
+    my $rf = $dxchan->{rbnfilter} || $dxchan->{spotsfilter};
+    my $comment;
 
-        foreach my $r (@$cand) {
-                # $r = [$origin, $qrg, $call, $mode, $s, $t, $utz, $respot, $qra];
-                # Spot::prepare($qrg, $call, $utz, $comment, $origin);
-                next unless $r && ref $r;
+    foreach my $r (@$cand) {
+        next unless $r && ref $r;
 
-                $qra = $r->[RQra] if !$qra && $r->[RQra] && is_qra($r->[RQra]);
+        $qra = $r->[RQra] if !$qra && $r->[RQra] && is_qra($r->[RQra]);
 
-                $comment = sprintf "%-3s %2ddB $quality", $r->[RMode], $r->[RStrength];
-                my $s = $r->[RSpotData];                # the prepared spot
-                $s->[SComment] = $comment;              # apply new generated comment
+        $comment = sprintf "%-3s %2ddB $quality", $r->[RMode], $r->[RStrength];
+        my $s = $r->[RSpotData];                # the prepared spot
+        $s->[SComment] = $comment;              # apply new generated comment
 
-                ++$zone{$s->[SZone]};           # save the spotter's zone
+        ++$zone{$s->[SZone]};           # save the spotter's zone
 
-                # save the lowest strength one
-                if ($r->[RStrength] < $strength) {
-                        $strength = $r->[RStrength];
-                        $saver = $s;
-                        dbg("RBN: STRENGTH spot: $s->[SCall] qrg: $s->[SQrg] origin: $s->[SOrigin] dB: $r->[RStrength] < $strength") if isdbg 'rbnll';
-                }
-
-                if ($rf) {
-                        my ($want, undef) = $rf->it($s);
-                        dbg("RBN: FILTERING for $call spot: $s->[SCall] qrg: $s->[SQrg] origin: $s->[SOrigin] dB: $r->[RStrength] com: '$s->[SComment]' want: " . ($want ? 'YES':'NO')) if isdbg 'rbnll';
-                        next unless $want;
-                        $filtered = $s;
-                }
+        # save the lowest strength one
+        if ($r->[RStrength] < $strength) {
+            $strength = $r->[RStrength];
+            $saver = $s;
+            dbg("RBN: STRENGTH spot: $s->[SCall] qrg: $s->[SQrg] origin: $s->[SOrigin] dB: $r->[RStrength] < $strength") if isdbg 'rbnll';
         }
+    }
 
+    if ($saver) {
+        # create a zone list of spotters
+        delete $zone{$saver->[SZone]};  # remove this spotter's zone (leaving all the other zones)
+        my $z = join ',', sort {$a <=> $b} keys %zone;
+
+        # alter spot data accordingly
+        $saver->[SComment] .= " Z:$z" if $z;
+
+        # Apply the filter after modifying SComment
         if ($rf) {
-                $saver = $filtered;             # if nothing passed the filter's lips then $saver == $filtered == undef !
+            my ($want, undef) = $rf->it($saver);
+            dbg("RBN: FILTERING for $call spot: $saver->[SCall] qrg: $saver->[SQrg] origin: $saver->[SOrigin] dB: $strength com: '$saver->[SComment]' want: " . ($want ? 'YES':'NO')) if isdbg 'rbnll';
+            return unless $want; # Skip further processing if not wanted
         }
 
-        if ($saver) {
-                my $buf;
-                # create a zone list of spotters
-                delete $zone{$saver->[SZone]};  # remove this spotter's zone (leaving all the other zones)
-                my $z = join ',', sort {$a <=> $b} keys %zone;
+        send_final($dxchan, $saver);
 
-                # alter spot data accordingly
-                $saver->[SComment] .= " Z:$z" if $z;
+        ++$self->{nospot};
+        ++$self->{nospot10};
+        ++$self->{nospothour};
 
-                send_final($dxchan, $saver);
-
-                ++$self->{nospot};
-                ++$self->{nospot10};
-                ++$self->{nospothour};
-
-                if ($qra) {
-                        my $user = DXUser::get_current($saver->[SCall]) || DXUser->new($saver->[SCall]);
-                        unless ($user->qra && is_qra($user->qra)) {
-                                $user->qra($qra);
-                                dbg("RBN: update qra on $saver->[SCall] to $qra");
-                        }
-                        # update lastseen if nothing else
-                        $user->put;
-                }
+        if ($qra) {
+            my $user = DXUser::get_current($saver->[SCall]) || DXUser->new($saver->[SCall]);
+            unless ($user->qra && is_qra($user->qra)) {
+                $user->qra($qra);
+                dbg("RBN: update qra on $saver->[SCall] to $qra");
+            }
+            # update lastseen if nothing else
+            $user->put;
         }
+    }
 }
 
 sub send_final
@@ -822,9 +812,7 @@ sub process
                                 # finally send it out to any waiting public
                                 send_dx_spot($dxchan, $squality, $cand);
 
-                                # Kin
                                 send_rbn($dxchan, $squality, $cand);
-                                #
 
                                 # clear out the data and make this now just "spotted", but no further action required until respot time
                                 dbg "RBN: QUEUE key '$sp' cleared" if isdbg 'rbn';
@@ -1006,4 +994,55 @@ sub del_seeme
                 delete $seeme{basecall($call)};
         }
 }
+
+sub send_rbn
+{
+    my $self = shift;
+    my $quality = shift;
+    my $cand = shift;
+    my $strength = 100;
+    my $saver;
+    my %zone;
+    my $respot;
+    my $qra;
+    my $comment;
+    my $mode = $cand->[CData]->[RMode];
+
+    foreach my $r (@$cand) {
+         next unless $r && ref $r;
+
+        $qra = $r->[RQra] if !$qra && $r->[RQra] && is_qra($r->[RQra]);
+
+        $comment = sprintf "%-3s %2ddB $quality", $r->[RMode], $r->[RStrength];
+        my $s = $r->[RSpotData];
+        $s->[SComment] = $comment;
+
+        ++$zone{$s->[SZone]};
+
+        # save the lowest strength one
+        if ($r->[RStrength] < $strength) {
+            $strength = $r->[RStrength];
+            $saver = $s;
+        }
+    }
+
+    if ($saver) {
+        my $buf;
+        # create a zone list of spotters
+        delete $zone{$saver->[SZone]};
+        my $z = join ',', sort {$a <=> $b} keys %zone;
+
+        # alter spot data accordingly
+        $saver->[SComment] .= " Z:$z" if $z;
+        }
+
+    if (defined &Local::rbn_quality) {
+        my $r;
+                my $dt = DXUtil::cldate($saver->[STime]) . '^' .  DXUtil::ztime($saver->[STime]);
+        my $line = "SKIMMER^$saver->[SQrg]^$saver->[SCall]^$dt^$saver->[SComment]^$saver->[SOrigin]-#";
+        eval { $r = Local::rbn_quality($self, $line); };
+        return if $r;
+    }
+}
+
 1;
