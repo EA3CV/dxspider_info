@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20230316 v1.3
+# 20250130 v1.4
 #
 
 use strict;
@@ -39,6 +39,7 @@ foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
         $sort = "DXNT" if $dxchan->is_dxnet;
         $sort = "AR-C" if $dxchan->is_arcluster;
         $sort = "AK1A" if $dxchan->is_ak1a;
+        $sort = "CC  " if $dxchan->is_ccluster;
 #       $sort = "RBN " if $dxchan->is_rbn;
     } else {
         $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
