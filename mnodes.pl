@@ -1,5 +1,6 @@
 #
 # List of connected nodes for use from a mobile app
+# for build > 556
 #
 # Use: mnodes (or mn)
 #
@@ -39,7 +40,7 @@ foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
         $sort = "DXNT" if $dxchan->is_dxnet;
         $sort = "AR-C" if $dxchan->is_arcluster;
         $sort = "AK1A" if $dxchan->is_ak1a;
-        $sort = "CC  " if $dxchan->is_ccluster;
+        $sort = "CCCL" if $dxchan->is_ccluster;
 #       $sort = "RBN " if $dxchan->is_rbn;
     } else {
         $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
