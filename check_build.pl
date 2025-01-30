@@ -2,7 +2,7 @@
 
 #
 # Check if there is a new build.
-# Setting 'Y' will backup to /home/sysop/backup
+# Setting 'Y' will backup to /home/sysop/spider.backup
 # And the number of backups you want to save
 #
 # Only for the Mojo branch
