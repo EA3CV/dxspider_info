@@ -117,7 +117,6 @@ for my $sort (qw(route ann spots wcy wwv rbn)) {
     for my $flag (1, 0) {
         if (my $ref = Filter::read_in($sort, $call, $flag)) {
             push @out, $ref->print($call, $sort, $flag ? "input" : "");
-            push @out, " ";
         }
     }
 }
