@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250214 v0.0 Beta
+# 20250215 v0.2
 #
 
 use strict;
@@ -22,14 +22,17 @@ my @out;
 push @out, "-" x 80;
 push @out, sprintf "%22s %-10s        %8s %-10s", "Node:", $main::mycall, "Sysop:", $main::myalias;
 push @out, "-" x 80;
-push @out, sprintf "%22s %-10s        %8s %-10s", "Version:", $main::version, "Build:", $main::build;
+push @out, sprintf "%10s%-8s %-6s        %-4s %-7s        %-7s %-10s",
+   "", "Version:", $main::version,
+    "Build:", $main::build,
+    "Uptime:", main::uptime();
 push @out, "-" x 80, " ";
 
 # Obtener información del sistema
 my $distro       = qx(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"');
 my $perl_version = $^V;
 my $hostname     = qx(hostname);
-my $current_path = abs_path("..");
+my $current_path = abs_path(".");
 my $disk_usage   = qx(df -h "$current_path" | awk 'NR==2 {print \$5}');
 chomp($_) for ($distro, $hostname, $disk_usage);
 
@@ -67,7 +70,7 @@ push @out, " ";
 # Seguridad
 push @out, "---------------------------------- Security ------------------------------------";
 push @out, sprintf "%22s %-20s", "             Register:    \$main::reqreg     ", $main::reqreg;
-push @out, sprintf "%22s %-20s", "             Password:    \$main::passwdreq  ", $main::passwdreq;
+push @out, sprintf "%22s %-20s", "             Password:    \$main::passwdreq  ", $main::passwdreq // 0;
 push @out, " ";
 
 # Variables PC92
@@ -117,6 +120,7 @@ for my $sort (qw(route ann spots wcy wwv rbn)) {
     for my $flag (1, 0) {
         if (my $ref = Filter::read_in($sort, $call, $flag)) {
             push @out, $ref->print($call, $sort, $flag ? "input" : "");
+            push @out, " ";
         }
     }
 }
@@ -241,8 +245,8 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
 my $dxchan;
 push @out, " ";
 push @out, "-------------------------------- Partners List ---------------------------------";
-push @out, "Node      Type  Version  Build  R  P  Priv  Lock  Badnode";
-push @out, "--------  ----  -------  -----  -  -  ----  ----  -------";
+push @out, "Node      Type  Version  Build  R  P  Priv  Badnode  Isolate";
+push @out, "--------  ----  -------  -----  -  -  ----  -------  -------";
 
 foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my $call = $dxchan->call();
@@ -264,16 +268,17 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
 
     my $priv = (DXUser::get_current($call) // {})->{priv};
-    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
+#    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
     my $version = (DXUser::get_current($call) // {})->{version};
     my $build = (DXUser::get_current($call) // {})->{build};
     my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
     my $reg = (DXUser::get_current($call) // {})->{registered} eq "1" ? "R" : "";
     my $pass = (DXUser::get_current($call) // {})->{passwd} ? "P" : "";
+    my $isolate = (DXUser::get_current($call) // {})->{isolate} ? "Y" : "";
 
 if ($type eq "NODE") {
-    push @out, sprintf "%-9s %-4s %7s %6s %3s %2s %4s %5s %6s",
-                $call, $sort, $version, $build, $reg, $pass, $priv, $lock, $badnode;
+    push @out, sprintf "%-9s %-4s %7s %6s %3s %2s %4s %6s   %6s",
+                $call, $sort, $version, $build, $reg, $pass, $priv, $badnode, $isolate;
 }
 
 }
