@@ -38,7 +38,9 @@
 					SK1MMR         USER RBN    1 d  2 h  23 m
 
     send_pc92.pl              Utility that informs the rest of the network about the status of the node
-
+    
+    summary.pl                Utility that displays a summary of node data
+    
     total.pl                  Total Nodes/Users sent to the Telegram bot
 
 					EA3CV-2   ➡️  Nodes: 14   Users: 35
@@ -73,8 +75,10 @@
 				  Configure Node with more than one local IP.pdf
 				  Configure node with Dynamic IP.pdf
 				  Create a secure connection between nodes.pdf
+      				  How to set up a partner node in dxcluster
 				  List of nodes for mobile use.pdf
 				  List of users for mobile use.pdf
+      				  Network Latency Measurements in the DXCluster Node Network
 				  Node_configuration_for_user_access.pdf
 				  Restoring the user DB.pdf
 
