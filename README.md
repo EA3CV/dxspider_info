@@ -75,10 +75,10 @@
 				  Configure Node with more than one local IP.pdf
 				  Configure node with Dynamic IP.pdf
 				  Create a secure connection between nodes.pdf
-      				  How to set up a partner node in dxcluster
+				  How to set up a partner node in dxcluster
 				  List of nodes for mobile use.pdf
 				  List of users for mobile use.pdf
-      				  Network Latency Measurements in the DXCluster Node Network
+				  Network Latency Measurements in the DXCluster Node Network
 				  Node_configuration_for_user_access.pdf
 				  Restoring the user DB.pdf
 
