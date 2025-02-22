@@ -29,6 +29,7 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
         my $sort = "    ";
         if ($dxchan->is_node) {
                 $sort = "DXSP" if $dxchan->is_spider;
+                $sort = "CCCL" if $dxchan->is_ccluster;
                 $sort = "CLX " if $dxchan->is_clx;
                 $sort = "DXNT" if $dxchan->is_dxnet;
                 $sort = "AR-C" if $dxchan->is_arcluster;
