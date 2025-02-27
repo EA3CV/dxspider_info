@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250215 v0.2
+# 20250227 v0.3
 #
 
 use strict;
@@ -75,7 +75,7 @@ push @out, " ";
 
 # Variables PC92
 push @out, "---------------------------------- PC92 Vars -----------------------------------";
-push @out, sprintf "%22s %-10s", "             PC92 A/D:    \$DXProt::pc92_ad_enable      ", $DXProt::pc92_ad_enable;
+push @out, sprintf "%22s %-10s", "             PC92 A/D:    \$DXProt::pc92_ad_enabled      ", $DXProt::pc92_ad_enabled;
 push @out, sprintf "%22s %-10s", "          PC92 IPaddr:    \$DXProt::pc92c_ipaddr_enable ", $DXProt::pc92c_ipaddr_enable;
 push @out, " ";
 
