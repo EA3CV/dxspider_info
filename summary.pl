@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250227 v0.3
+# 20250228 v0.4
 #
 
 use strict;
@@ -268,9 +268,7 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
 
     my $priv = (DXUser::get_current($call) // {})->{priv};
-#    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
-    my $version = (DXUser::get_current($call) // {})->{version};
-    my $build = (DXUser::get_current($call) // {})->{build};
+    my $version = (Route::Node::get($call) // {})->{version};
     my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
     my $reg = (DXUser::get_current($call) // {})->{registered} eq "1" ? "R" : "";
     my $pass = (DXUser::get_current($call) // {})->{passwd} ? "P" : "";
