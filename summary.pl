@@ -1,3 +1,4 @@
+
 #
 # DXSpider data summary
 #
@@ -7,7 +8,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250228 v0.4
+# 20250301 v1.2
 #
 
 use strict;
@@ -67,23 +68,6 @@ push @out, "------------------------------------ Debug -------------------------
 push @out, sprintf "%22s %-20s", "Debug ON:", join(", ", @main::debug);
 push @out, " ";
 
-# Seguridad
-push @out, "---------------------------------- Security ------------------------------------";
-push @out, sprintf "%22s %-20s", "             Register:    \$main::reqreg     ", $main::reqreg;
-push @out, sprintf "%22s %-20s", "             Password:    \$main::passwdreq  ", $main::passwdreq // 0;
-push @out, " ";
-
-# Variables PC92
-push @out, "---------------------------------- PC92 Vars -----------------------------------";
-push @out, sprintf "%22s %-10s", "             PC92 A/D:    \$DXProt::pc92_ad_enabled      ", $DXProt::pc92_ad_enabled;
-push @out, sprintf "%22s %-10s", "          PC92 IPaddr:    \$DXProt::pc92c_ipaddr_enable ", $DXProt::pc92c_ipaddr_enable;
-push @out, " ";
-
-# Variables de comandos
-push @out, "---------------------------------- CMD Vars ------------------------------------";
-push @out, sprintf "%22s %-20s", "          Max CMD Bad:    \$DXCommandmode::maxbadcount ", $DXCommandmode::maxbadcount;
-push @out, " ";
-
 # Total de peers y usuarios
 push @out, "----------------------------- Total Peers/Users --------------------------------";
 push @out, sprintf "%22s %-10s        %8s %-10s", "Peers Nodes:", scalar DXChannel::get_all_nodes(), "Total Users:", scalar DXChannel::get_all_users();
@@ -99,18 +83,55 @@ push @out, "----------------------------------- Console ------------------------
 push @out, sprintf "%22s %-10s        %8s %-10s", "IP Addr:", $main::clusteraddr, "Port:", $main::clusterport;
 push @out, " ";
 
-# Variables de spots
-push @out, "--------------------------------- Spots Vars -----------------------------------";
-push @out, sprintf "%22s %-10s", "       Slot Time  (s):    \$Spot::timegranularity ", $Spot::timegranularity;
-push @out, sprintf "%22s %-10s", "       Slot QRG (kHz):    \$Spot::qrggranularity  ", $Spot::qrggranularity;
-push @out, sprintf "%22s %-10s", "       Dupe Page  (s):    \$Spot::dupage          ", $Spot::dupage;
-push @out, sprintf "%22s %-10s", "       Autospot (kHz):    \$Spot::minselfspotqrg  ", $Spot::minselfspotqrg;
+push @out, "---------------------------------- Security ------------------------------------";
 push @out, " ";
-
-# Variables RBN
+push @out, "                             Register:    \$main::reqreg = ".$main::reqreg;
+push @out, "                             Password:    \$main::passwdreq = ".($main::passwdreq // 0);
+push @out, " ";
+push @out, "--------------------------------- Users Vars -----------------------------------";
+push @out, " ";
+push @out, "                         Highest SSID:    \$main::max_ssid = ".$main::max_ssid;
+push @out, "            Max num simultaneous conn:    \$main::maxconnect_user = ".$main::maxconnect_user;
+push @out, "    Allow new conn to disconn old (1):    \$main::bumpexisting = ".$main::bumpexisting;
+push @out, "       Min (ms) between conn per user:    \$main::min_reconnection_rate = ".$main::min_reconnection_rate;
+push @out, "    Don't allow dx by <othercall> (0):    \$main::allowdxby = ".$main::allowdxby;
+push @out, " Max concurrent errors before disconn:    \$DXChannel::maxerrors = ".$DXChannel::maxerrors;
+push @out, "     Bad words allowed before disconn:    \$DXCommandmode::maxbadcount = ".$DXCommandmode::maxbadcount;
+push @out, " ";
+push @out, "--------------------------------- Node Vars ------------------------------------";
+push @out, " ";
+push @out, "         Max number simultaneous conn:    \$main::maxconnect_node = ".$main::maxconnect_node;
+push @out, "                   Max connlist pairs:    \$DXUser::maxconnlist = ".$DXUser::maxconnlist;
+push @out, "                            Bad spots:    \$DXProt::senderverify = ".$DXProt::senderverify;
+push @out, " ";
+push @out, "--------------------------------- Spots Vars -----------------------------------";
+push @out, " ";
+push @out, "                       Slot Time  (s):    \$Spot::timegranularity = ".$Spot::timegranularity;
+push @out, "                       Slot QRG (kHz):    \$Spot::qrggranularity = ".$Spot::qrggranularity;
+push @out, "                       Dupe Page  (s):    \$Spot::dupage = ".$Spot::dupage;
+push @out, "                       Autospot (kHz):    \$Spot::minselfspotqrg = ".$Spot::minselfspotqrg;
+push @out, "          Length text in the deduping:    \$Spot::duplth = ".$Spot::duplth;
+push @out, "            Max length call for dupes:    \$Spot::maxcalllth = ".$Spot::maxcalllth;
+push @out, "          Remove node field from dupe:    \$Spot::no_node_in_dupe = ".$Spot::no_node_in_dupe;
+push @out, "               Number spots to return:    \$Spot::defaultspots = ".$Spot::defaultspots;
+push @out, "                  Max spots to return:    \$Spot::defaultspots = ".$Spot::defaultspots;
+push @out, "                  Max days to go back:    \$Spot::maxdays = ".$Spot::maxdays;
+push @out, "                      Cache spot days:    \$Spot::spotcachedays = ".$Spot::spotcachedays;
+push @out, " ";
 push @out, "---------------------------------- RBN Vars ------------------------------------";
-push @out, sprintf "%22s %-10s", "               Byte Q:    \$RBN::minqual    ", $RBN::minqual;
-push @out, sprintf "%22s %-10s", "      Respot time (s):    \$RBN::respottime ", $RBN::respottime;
+push @out, " ";
+push @out, "                               Byte Q:    \$RBN::minqual = ".$RBN::minqual;
+push @out, "                      Respot time (s):    \$RBN::respottime = ".$RBN::respottime;
+push @out, " ";
+push @out, "---------------------------------- PC92 Vars -----------------------------------";
+push @out, " ";
+push @out, "                             PC92 A/D:    \$DXProt::pc92_ad_enabled = ".$DXProt::pc92_ad_enabled;
+push @out, "                          PC92 IPaddr:    \$DXProt::pc92c_ipaddr_enable = ".$DXProt::pc92c_ipaddr_enable;
+push @out, "Period between outgoing PC92C updates:    \$DXProt::pc92_update_period = ".$DXProt::pc92_update_period;
+push @out, "   Shorten update after conn/start up:    \$DXProt::pc92_short_update_period = ".$DXProt::pc92_short_update_period;
+push @out, "     Update period for external nodes:    \$DXProt::pc92_extnode_update_period = ".$DXProt::pc92_extnode_update_period;
+push @out, "           Frequency of PC92K records:    \$DXProt::pc92_keepalive_period = ".$DXProt::pc92_keepalive_period;
+push @out, "     Maximum time to wait for a reply:    \$DXProt::pc92_find_timeout = ".$DXProt::pc92_find_timeout;
 push @out, " ";
 
 # Filtros de nodo
@@ -268,7 +289,9 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
 
     my $priv = (DXUser::get_current($call) // {})->{priv};
+#    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
     my $version = (Route::Node::get($call) // {})->{version};
+    my $build = (Route::Node::get($call) // {})->{build};
     my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
     my $reg = (DXUser::get_current($call) // {})->{registered} eq "1" ? "R" : "";
     my $pass = (DXUser::get_current($call) // {})->{passwd} ? "P" : "";
