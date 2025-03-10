@@ -1,4 +1,3 @@
-
 #
 # DXSpider data summary
 #
@@ -8,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250301 v1.2
+# 20250310 v1.4
 #
 
 use strict;
@@ -52,7 +51,7 @@ push @out, " ";
 # Puertos de escucha
 push @out, "--------------------------------- Listen Port ----------------------------------";
 if (@main::listen) {
-    push @out, map { sprintf "Listen Port: ['%s', %d]", $_->[0], $_->[1] } @main::listen;
+    push @out, map { sprintf "%40s/%d", $_->[0], $_->[1] } @main::listen;
 } else {
     push @out, "Error: No hay datos en \@main::listen";
 }
@@ -65,12 +64,13 @@ push @out, " ";
 
 # Depuración
 push @out, "------------------------------------ Debug -------------------------------------";
-push @out, sprintf "%22s %-20s", "Debug ON:", join(", ", @main::debug);
+push @out, sprintf "%22s %-20s", "Default Debug:", join(", ", @main::debug);
+push @out, sprintf "%22s %-20s", "Current Debug:", join(", ", sort keys %DXDebug::dbglevel);
 push @out, " ";
 
 # Total de peers y usuarios
 push @out, "----------------------------- Total Peers/Users --------------------------------";
-push @out, sprintf "%22s %-10s        %8s %-10s", "Peers Nodes:", scalar DXChannel::get_all_nodes(), "Total Users:", scalar DXChannel::get_all_users();
+push @out, sprintf "%22s %-10s        %8s %-10s", "Peers Nodes:", scalar(DXChannel::get_all_nodes()) - 1, "Total Users:", scalar DXChannel::get_all_users();
 push @out, " ";
 
 # Spots
@@ -113,8 +113,7 @@ push @out, "                       Autospot (kHz):    \$Spot::minselfspotqrg = "
 push @out, "          Length text in the deduping:    \$Spot::duplth = ".$Spot::duplth;
 push @out, "            Max length call for dupes:    \$Spot::maxcalllth = ".$Spot::maxcalllth;
 push @out, "          Remove node field from dupe:    \$Spot::no_node_in_dupe = ".$Spot::no_node_in_dupe;
-push @out, "               Number spots to return:    \$Spot::defaultspots = ".$Spot::defaultspots;
-push @out, "                  Max spots to return:    \$Spot::defaultspots = ".$Spot::defaultspots;
+push @out, "                  Max spots to return:    \$Spot::maxspots = ".$Spot::maxspots;
 push @out, "                  Max days to go back:    \$Spot::maxdays = ".$Spot::maxdays;
 push @out, "                      Cache spot days:    \$Spot::spotcachedays = ".$Spot::spotcachedays;
 push @out, " ";
