@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250310 v1.4
+# 20250320 v1.5
 #
 
 use strict;
@@ -48,6 +48,11 @@ push @out, sprintf "%22s %-20s", "Public IPv4:", $main::localhost_alias_ipv4;
 push @out, sprintf "%22s %-20s", "Public IPv6:", $main::localhost_alias_ipv6;
 push @out, " ";
 
+# IP local
+push @out, "----------------------------------- Local IP -----------------------------------";
+push @out, sprintf "%22s %-20s", "Local IP:", join(", ", @main::localhost_names);
+push @out, " ";
+
 # Puertos de escucha
 push @out, "--------------------------------- Listen Port ----------------------------------";
 if (@main::listen) {
@@ -55,11 +60,6 @@ if (@main::listen) {
 } else {
     push @out, "Error: No hay datos en \@main::listen";
 }
-push @out, " ";
-
-# IP local
-push @out, "----------------------------------- Local IP -----------------------------------";
-push @out, sprintf "%22s %-20s", "Local IP:", join(", ", @main::localhost_names);
 push @out, " ";
 
 # Depuración
@@ -97,6 +97,7 @@ push @out, "       Min (ms) between conn per user:    \$main::min_reconnection_r
 push @out, "    Don't allow dx by <othercall> (0):    \$main::allowdxby = ".$main::allowdxby;
 push @out, " Max concurrent errors before disconn:    \$DXChannel::maxerrors = ".$DXChannel::maxerrors;
 push @out, "     Bad words allowed before disconn:    \$DXCommandmode::maxbadcount = ".$DXCommandmode::maxbadcount;
+push @out, "  Remove all auto generated FTx spots:    \$DXProt::remove_auto_ftx = ".$DXProt::remove_auto_ftx;
 push @out, " ";
 push @out, "--------------------------------- Node Vars ------------------------------------";
 push @out, " ";
@@ -106,31 +107,42 @@ push @out, "                            Bad spots:    \$DXProt::senderverify = "
 push @out, " ";
 push @out, "--------------------------------- Spots Vars -----------------------------------";
 push @out, " ";
-push @out, "                       Slot Time  (s):    \$Spot::timegranularity = ".$Spot::timegranularity;
-push @out, "                       Slot QRG (kHz):    \$Spot::qrggranularity = ".$Spot::qrggranularity;
-push @out, "                       Dupe Page  (s):    \$Spot::dupage = ".$Spot::dupage;
-push @out, "                       Autospot (kHz):    \$Spot::minselfspotqrg = ".$Spot::minselfspotqrg;
-push @out, "          Length text in the deduping:    \$Spot::duplth = ".$Spot::duplth;
-push @out, "            Max length call for dupes:    \$Spot::maxcalllth = ".$Spot::maxcalllth;
-push @out, "          Remove node field from dupe:    \$Spot::no_node_in_dupe = ".$Spot::no_node_in_dupe;
-push @out, "                  Max spots to return:    \$Spot::maxspots = ".$Spot::maxspots;
-push @out, "                  Max days to go back:    \$Spot::maxdays = ".$Spot::maxdays;
-push @out, "                      Cache spot days:    \$Spot::spotcachedays = ".$Spot::spotcachedays;
+push @out, "                        Slot Time  (s):    \$Spot::timegranularity = ".$Spot::timegranularity;
+push @out, "                        Slot QRG (kHz):    \$Spot::qrggranularity = ".$Spot::qrggranularity;
+push @out, "                        Dupe Page  (s):    \$Spot::dupage = ".$Spot::dupage;
+push @out, "                        Autospot (kHz):    \$Spot::minselfspotqrg = ".$Spot::minselfspotqrg;
+push @out, "           Length text in the deduping:    \$Spot::duplth = ".$Spot::duplth;
+push @out, "             Max length call for dupes:    \$Spot::maxcalllth = ".$Spot::maxcalllth;
+push @out, "           Remove node field from dupe:    \$Spot::no_node_in_dupe = ".$Spot::no_node_in_dupe;
+push @out, "                   Max spots to return:    \$Spot::maxspots = ".$Spot::maxspots;
+push @out, "                   Max days to go back:    \$Spot::maxdays = ".$Spot::maxdays;
+push @out, "                       Cache spot days:    \$Spot::spotcachedays = ".$Spot::spotcachedays;
+push @out, " ";
+push @out, "        Enable/disable "node" checking:    \$Spot::do_node_check = ".$Spot::do_node_check;
+push @out, "        Enable/disable "call" checking:    \$Spot::do_call_check = ".$Spot::do_call_check;
+push @out, "          Enable/disable "by" checking:    \$Spot::do_by_check = ".$Spot::do_by_check;
+push @out, "      Enable/disable "ipaddr" checking:    \$Spot::do_ipaddr_check = ".$Spot::do_ipaddr_check;
+push @out, " ";
+push @out, " Check "call" is not spotted too often:    \$Spot::dupecall = ".$Spot::dupecall;
+push @out, "Threshold "call" to become a duplicate:    \$Spot::dupecallthreshold = ".$Spot::dupecallthreshold;
+push @out, " Check "node" is not spotted too often:    \$Spot::nodetime = ".$Spot::nodetime;
+push @out, "Threshold "node" to become a duplicate:    \$Spot::nodetimethreshold = ".$Spot::nodetimethreshold;
 push @out, " ";
 push @out, "---------------------------------- RBN Vars ------------------------------------";
 push @out, " ";
-push @out, "                               Byte Q:    \$RBN::minqual = ".$RBN::minqual;
-push @out, "                      Respot time (s):    \$RBN::respottime = ".$RBN::respottime;
+push @out, "                                Byte Q:    \$RBN::minqual = ".$RBN::minqual;
+push @out, "                       Respot time (s):    \$RBN::respottime = ".$RBN::respottime;
 push @out, " ";
 push @out, "---------------------------------- PC92 Vars -----------------------------------";
 push @out, " ";
-push @out, "                             PC92 A/D:    \$DXProt::pc92_ad_enabled = ".$DXProt::pc92_ad_enabled;
-push @out, "                          PC92 IPaddr:    \$DXProt::pc92c_ipaddr_enable = ".$DXProt::pc92c_ipaddr_enable;
-push @out, "Period between outgoing PC92C updates:    \$DXProt::pc92_update_period = ".$DXProt::pc92_update_period;
-push @out, "   Shorten update after conn/start up:    \$DXProt::pc92_short_update_period = ".$DXProt::pc92_short_update_period;
-push @out, "     Update period for external nodes:    \$DXProt::pc92_extnode_update_period = ".$DXProt::pc92_extnode_update_period;
-push @out, "           Frequency of PC92K records:    \$DXProt::pc92_keepalive_period = ".$DXProt::pc92_keepalive_period;
-push @out, "     Maximum time to wait for a reply:    \$DXProt::pc92_find_timeout = ".$DXProt::pc92_find_timeout;
+push @out, "                              PC92 A/D:    \$DXProt::pc92_ad_enabled = ".$DXProt::pc92_ad_enabled;
+push @out, "                           PC92 IPaddr:    \$DXProt::pc92c_ipaddr_enable = ".$DXProt::pc92c_ipaddr_enable;
+push @out, " Period between outgoing PC92C updates:    \$DXProt::pc92_update_period = ".$DXProt::pc92_update_period;
+push @out, "    Shorten update after conn/start up:    \$DXProt::pc92_short_update_period = ".$DXProt::pc92_short_update_period;
+push @out, "      Update period for external nodes:    \$DXProt::pc92_extnode_update_period = ".$DXProt::pc92_extnode_update_period;
+push @out, "            Frequency of PC92K records:    \$DXProt::pc92_keepalive_period = ".$DXProt::pc92_keepalive_period;
+push @out, "      Maximum time to wait for a reply:    \$DXProt::pc92_find_timeout = ".$DXProt::pc92_find_timeout;
+push @out, "Delay for PC92A to be sent before spot:    \$DXProt::pc92_slug_changes = ".$DXProt::pc92_slug_changes;
 push @out, " ";
 
 # Filtros de nodo
