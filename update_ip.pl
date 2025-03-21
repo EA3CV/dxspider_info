@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+
 #
 # Updating the $main::localhost_alias_ipv4 and @main::localhost_names var
 #
@@ -7,14 +8,14 @@
 # Configure crontab:
 # 00,10,20,30,40,50 * * * * run_cmd("update_ip")
 #
-# Notes: 
+# Notes:
 #
 # Need: apt install libpath-tiny-perl or
 # Module: cpanm install Path::Tiny
 #
 # Kin EA3CV ea3cv@cronux.net
 #
-# 20250215 v0.8
+# 20250215 v1.0
 #
 
 use 5.10.1;
@@ -23,7 +24,7 @@ use strict;
 use warnings;
 
 my $ip = `curl -s ifconfig.me`;
-my $ips = `hostname -I`;          # -i para Docker, -I para el resto
+my $ips = `hostname -i`;          # -i para Docker, -I para el resto
 chomp($ip);  # Eliminar salto de línea de la IP pública
 
 my $var1 = 'set/var $main::localhost_alias_ipv4 =';
@@ -55,14 +56,14 @@ sub cmd_import {
     if ( !-d $dir ) {
         system('mkdir', $dir);
     }
-    
+
     my $file = $dir . "/" . 'update_ip';
 
     open (FH, '>', $file) or die "No se pudo abrir el archivo $file: $!";
     say FH $msg1;
     say FH $msg2;
     close (FH);
-    
+
     # Añadir a la lista de salida
     push @out, " Updated Public and Local IPs.";
     push @out, " ";
