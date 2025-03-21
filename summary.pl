@@ -126,7 +126,7 @@ push @out, " ";
 push @out, " Check 'call' is not spotted too often:    \$Spot::dupecall = ".$Spot::dupecall;
 push @out, "Threshold 'call' to become a duplicate:    \$Spot::dupecallthreshold = ".$Spot::dupecallthreshold;
 push @out, " Check 'node' is not spotted too often:    \$Spot::nodetime = ".$Spot::nodetime;
-push @out, "Threshold "node" to become a duplicate:    \$Spot::nodetimethreshold = ".$Spot::nodetimethreshold;
+push @out, "Threshold 'node' to become a duplicate:    \$Spot::nodetimethreshold = ".$Spot::nodetimethreshold;
 push @out, " ";
 push @out, "---------------------------------- RBN Vars ------------------------------------";
 push @out, " ";
