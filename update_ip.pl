@@ -15,7 +15,7 @@
 #
 # Kin EA3CV ea3cv@cronux.net
 #
-# 20250215 v1.0
+# 20250321 v1.1
 #
 
 use 5.10.1;
@@ -48,6 +48,7 @@ cmd_import($msg1, $msg2);
 
 # Subrutina para importar el archivo y escribir en el directorio de importación
 sub cmd_import {
+    my @out;
     my $msg1 = shift;
     my $msg2 = shift;
 
