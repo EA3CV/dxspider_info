@@ -15,7 +15,7 @@
 #
 # Kin EA3CV ea3cv@cronux.net
 #
-# 20250321 v1.1
+# 20250322 v1.2
 #
 
 use 5.10.1;
@@ -24,7 +24,7 @@ use strict;
 use warnings;
 
 my $ip = `curl -s ifconfig.me`;
-my $ips = `hostname -i`;          # -i para Docker, -I para el resto
+my $ips = `hostname -I`;          # -i para Docker, -I para el resto
 chomp($ip);  # Eliminar salto de línea de la IP pública
 
 my $var1 = 'set/var $main::localhost_alias_ipv4 =';
