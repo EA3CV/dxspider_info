@@ -5,7 +5,7 @@
 #
 # AND and OR are used to define the filtering applied to all strings.
 # The format of the date is YYYYYMMDD-HHMMSS
-# Example: ./search.pl 20250323-170500 20250323-172500 debug/2025/085.dat AND "I EA0XXX-2 PC61" JN68px
+# Example: ./search.pl 20250323-170500 20250323-172500 ../local_data/debug/2025/085.dat AND "I EA0XXX-2 PC61" JN68px
 #
 # May need to be installed: cpanm Term::ANSIColor
 #
