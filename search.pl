@@ -2,13 +2,16 @@
 
 #
 # Search debug by string(s) and a human time range.
+#
 # AND and OR are used to define the filtering applied to all strings.
+# The format of the date is YYYYYMMDD-HHMMSS
+# Example: ./search.pl 20250323-170500 20250323-172500 debug/2025/085.dat AND "I EA0XXX-2 PC61" JN68px
 #
 # May need to be installed: cpan Term::ANSIColor
 #
 # Kin EA3CV ea3cv@cronux.net
 #
-# 20250326 v0.0
+# 20250326 v0.1
 #
 
 use strict;
