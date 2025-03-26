@@ -38,6 +38,8 @@
 					SK1MMR         USER RBN    1 d  2 h  23 m
 
     send_pc92.pl              Utility that informs the rest of the network about the status of the node
+
+    search.pl                 Utility that search debug by string(s) and a human time range.
     
     summary.pl                Utility that displays a summary of node data
     
