@@ -1,3 +1,5 @@
+#!/usr/bin/perl
+
 #
 # List of connected users for use from a mobile app
 #
@@ -7,7 +9,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20230302 v1.3
+# 20250327 v1.4
 #
 
 use strict;
@@ -19,21 +21,26 @@ return 1 unless $self->priv >= 5;
 
 my $tnow = time();
 my $all_users = 0;
-my @out = (" ", " List of Connected Users:", " ", " Callsign  R P  Type       Connection Time",
-                                                  " --------  - -  ---------  ---------------");
+my @out = (
+    " ",
+    " List of Connected Users:",
+    " ",
+    " Callsign  R P  Type       Connection Time",
+    " --------  - -  ---------  ---------------"
+);
 
-foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
-    my $call = $dxchan->call();
-    my $type = $dxchan->is_node ? "NODE" : "USER";
-    my $sort = "    ";
-    my $isreg = reg($call) ?  "R" : " ";
-    my $ispass = pass($call) ?  "P" : " ";
-    my $name = $dxchan->user->name || " ";
-    my $conn = $dxchan->conn;
-    my $ip = '';
+foreach my $dxchan ( sort { $a->call cmp $b->call } DXChannel::get_all ) {
+    my $call  = $dxchan->call();
+    my $type  = $dxchan->is_node ? "NODE" : "USER";
+    my $sort  = "    ";
+    my $isreg = reg($call) ? "R" : " ";
+    my $ispass = pass($call) ? "P" : " ";
+    my $name   = $dxchan->user->name || " ";
+    my $conn   = $dxchan->conn;
+    my $ip     = '';
     my $time_on;
 
-    if ($dxchan->is_node || $dxchan->is_rbn) {
+    if ( $dxchan->is_node || $dxchan->is_rbn ) {
         $sort = "DXSP" if $dxchan->is_spider;
         $sort = "CLX " if $dxchan->is_clx;
         $sort = "DXNT" if $dxchan->is_dxnet;
@@ -52,10 +59,15 @@ foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     }
 
     my $delta = $tnow - $dxchan->startt;
-    $time_on = sprintf("%3d d%3d h %3d m", int($delta/(24*60*60)), int(($delta/(60*60))%24), int(($delta/60)%60));
+    $time_on = sprintf(
+        "%3d d%3d h %3d m",
+        int( $delta / ( 24 * 60 * 60 ) ),
+        int( ( $delta / ( 60 * 60 ) ) % 24 ),
+        int( ( $delta / 60 ) % 60 )
+    );
 
-    if ($type eq "USER") {
-        push @out, sprintf(" %-9s $isreg $ispass  $type $sort $time_on", $call);
+    if ( $type eq "USER" ) {
+        push @out, sprintf( " %-9s $isreg $ispass  $type $sort $time_on", $call );
     }
 }
 
@@ -65,11 +77,12 @@ push @out, " ", " Total Users:  $all_users", " ";
 
 return (1, @out);
 
+# ✅ Corrección aquí:
 sub reg {
     my $call = shift;
     $call = uc $call;
     my $ref = DXUser::get_current($call);
-    return $ref && $ref->{registered} eq "1";
+    return defined $ref && defined $ref->{registered} && $ref->{registered} eq "1";
 }
 
 sub pass {
