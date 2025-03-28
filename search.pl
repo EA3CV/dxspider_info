@@ -3,10 +3,8 @@
 #
 # Search debug by string(s) and a human time range.
 #
-# Descubre cómo funciona, hihihi
-#
 # Kin
-# 20250329 v1.0
+# 20250329 v1.1
 #
 
 use strict;
@@ -39,7 +37,7 @@ if ($help) {
 unless ($file) {
     my ($sec,$min,$hour,$mday,$mon,$year) = localtime();
     my $day_of_year = strftime("%j", localtime);
-    $file = "$day_of_year.dat";
+    $file = "/spider/local_data/debug/$year/$day_of_year.dat";
     print STDERR "ℹ️  No se indicó -f. Se usará automáticamente el fichero: $file\n";
 }
 
