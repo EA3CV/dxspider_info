@@ -116,7 +116,7 @@ push @out, "           Remove node field from dupe:    \$Spot::no_node_in_dupe =
 push @out, "                   Max spots to return:    \$Spot::maxspots = ".$Spot::maxspots;
 push @out, "                   Max days to go back:    \$Spot::maxdays = ".$Spot::maxdays;
 push @out, "                       Cache spot days:    \$Spot::spotcachedays = ".$Spot::spotcachedays;
-push @out, "       Granularity input time Spot (s):    \$Spot::spotage = "$Spot::spotage;
+push @out, "       Granularity input time Spot (s):    \$Spot::spotage = ".$Spot::spotage;
 push @out, "                             Bad spots:    \$DXProt::senderverify = ".$DXProt::senderverify;
 push @out, " ";
 push @out, "        Enable/disable 'node' checking:    \$Spot::do_node_check = ".$Spot::do_node_check;
