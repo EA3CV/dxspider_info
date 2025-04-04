@@ -1,21 +1,32 @@
-#!/usr/bin/perl
-
 #
-# Updating the $main::localhost_alias_ipv4 and @main::localhost_names var
-#
-# Copy to /spider/local_cmd/update_ip.pl
-#
-# Configure crontab:
-# 00,10,20,30,40,50 * * * * run_cmd("update_ip")
-#
-# Notes:
-#
-# Need: apt install libpath-tiny-perl or
-# Module: cpanm install Path::Tiny
-#
-# Kin EA3CV ea3cv@cronux.net
-#
-# 20250322 v1.2
+#  update_ip.pl                                                              
+#                                                                            
+#  Description:                                                              
+#    This script updates two key DXSpider startup variables:                
+#      - $main::localhost_alias_ipv4 : current public IPv4 address           
+#      - @main::localhost_names      : list of local IPs (127.0.0.1, ::1, etc.)
+#                                                                            
+#    These values are automatically inserted or updated in:                 
+#      - /spider/scripts/startup                                             
+#                                                                            
+#    Intended to run periodically (e.g. via cron) to reflect network changes,
+#    especially in dynamic IP environments or container setups (e.g. Docker).
+#                                                                            
+#  Installation:                                                             
+#    Save this script as /spider/local_cmd/update_ip.pl                     
+#                                                                            
+#  Requirements:                                                             
+#    Perl module 'Path::Tiny':                                              
+#      Debian/Ubuntu: apt install libpath-tiny-perl                         
+#      CPAN         : cpanm Path::Tiny                                        
+#                                                                            
+#  Cron usage:                                                               
+#    To update every 10 minutes, add this to your crontab:                  
+#      00,10,20,30,40,50 * * * * run_cmd("update_ip")                       
+#                                                                            
+#  Author   : Kin EA3CV (ea3cv@cronux.net)                                   
+#                                                             
+#  20250322 v1.3
 #
 
 use 5.10.1;
