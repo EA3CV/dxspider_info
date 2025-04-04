@@ -1,27 +1,30 @@
 #
-# unset/badip - remove IPs from the badip file
+#  unset/badip - Remove IPs from the badip file
 #
-# This command allows a sysop to remove one or more IP addresses
-# from the badip list used by DXCIDR. The list is maintained in
-# files such as 'badip.local', 'badip.eu', etc.
+#  Description:
+#    This command allows a sysop to remove one or more IP addresses
+#    from the badip list used by DXCIDR. The list is maintained in
+#    files such as 'badip.local', 'badip.eu', etc., and used to block
+#    undesired connections.
 #
-# Usage:
-#   unset/badip [suffix] ip [ip2 ip3 ...]
+#  Usage:
+#    unset/badip [suffix] ip [ip2 ip3 ...]
 #
-# Examples:
-#   unset/badip 192.168.1.10
-#   unset/badip eu 192.168.1.10 192.168.1.20
+#  Examples:
+#    unset/badip 192.168.1.10
+#    unset/badip eu 192.168.1.10 192.168.1.20
 #
-# Notes:
-# - The default suffix is 'local' if none is specified.
-# - Only IP addresses present in the list will be removed.
-# - The badip file is rewritten and the CIDR database reloaded.
-# - Requires DXCIDR to be active and user privilege level ≥ 6.
+#  Notes:
+#    - The default suffix is 'local' if none is specified.
+#    - Only IP addresses present in the list will be removed.
+#    - The badip file is rewritten and the CIDR database reloaded.
 #
+#  Installation:
+#    Place this script in: /spider/local_cmd/unset
 #
-# Kin EA3CV ea3cv@cronux.net
+#  Author:   Kin EA3CV <ea3cv@cronux.net>
 #
-# 20250403 v0.0
+# 20250404 v0.1
 #
 
 my ($self, $line) = @_;
