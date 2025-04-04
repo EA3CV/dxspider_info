@@ -1,3 +1,5 @@
+    show/believe              List nodes that a given node considers as "believable"
+
     Console.pm                Customisation of console colours in Linux
 
     DXDebug.pm                &Local::log_msg
@@ -36,6 +38,10 @@
 					EA1BHB         USER EXT    0 d  7 h  13 m
 					SK0MMR         USER RBN    1 d  2 h  23 m
 					SK1MMR         USER RBN    1 d  2 h  23 m
+
+    show/nodestype            Search for nodes by type in the DB
+
+    show/registered           Modification of the original command
 
     send_pc92.pl              Utility that informs the rest of the network about the status of the node
 
