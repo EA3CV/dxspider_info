@@ -1,5 +1,5 @@
 #
-# show/nodestype
+# show/typenodes
 #
 # Description:
 #   This command queries the node's internal user database to retrieve all
@@ -18,8 +18,8 @@
 #   X => DXNet
 #
 # Usage:
-#   show/nodestype         # shows all types
-#   show/nodestype         # shows only DXSpider nodes
+#   show/typenodes         # shows all types
+#   show/typenodes         # shows only DXSpider nodes
 #
 #
 # Author: Kin EA3CV, ea3cv@cronux.net
