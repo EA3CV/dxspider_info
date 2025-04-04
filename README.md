@@ -21,7 +21,9 @@
     compression.pl            Compression of the previous day's debug files
 
     conndisc.pl               Reports connections/disconnections or attempted connections to or from nodes.
-    
+
+    show/list_pc92_nodes      Show nodes seen via PC92
+
     mnodes.pl		  List of connected nodes for use from a mobile app
 
 					Callsign  R P  Type       Connection Time
