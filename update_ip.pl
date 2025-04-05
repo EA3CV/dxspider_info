@@ -1,32 +1,37 @@
 #
-#  update_ip.pl                                                              
+#  set/update_ip.pl                                                              
 #                                                                            
 #  Description:                                                              
 #    This script updates two key DXSpider startup variables:                
-#      - $main::localhost_alias_ipv4 : current public IPv4 address           
+#      - $main::localhost_alias_ipv4 : current public IPv4 address          
 #      - @main::localhost_names      : list of local IPs (127.0.0.1, ::1, etc.)
-#                                                                            
-#    These values are automatically inserted or updated in:                 
-#      - /spider/scripts/startup                                             
-#                                                                            
+#
+#     These values are automatically inserted or updated in:                 
+#      - /spider/scripts/startup                                            
+#
 #    Intended to run periodically (e.g. via cron) to reflect network changes,
 #    especially in dynamic IP environments or container setups (e.g. Docker).
-#                                                                            
+#
 #  Installation:                                                             
-#    Save this script as /spider/local_cmd/update_ip.pl                     
-#                                                                            
+#    Save this script as /spider/local_cmd/set/update_ip.pl                     
+#
 #  Requirements:                                                             
-#    Perl module 'Path::Tiny':                                              
-#      Debian/Ubuntu: apt install libpath-tiny-perl                         
-#      CPAN         : cpanm Path::Tiny                                        
-#                                                                            
-#  Cron usage:                                                               
-#    To update every 10 minutes, add this to your crontab:                  
-#      00,10,20,30,40,50 * * * * run_cmd("update_ip")                       
-#                                                                            
-#  Author   : Kin EA3CV (ea3cv@cronux.net)                                   
-#                                                             
-#  20250322 v1.3
+#    Perl module 'Path::Tiny':                                               
+#      Debian/Ubuntu: apt install libpath-tiny-perl                          
+#      CPAN         : cpanm Path::Tiny                                       
+#
+#  Usage from DXSpider (as self command):
+#    From DXSpider shell: set/update_ip 192.168.1.5 10.0.0.5
+#
+#  Crontab usage:
+#    To update every 10 minutes, add this to your crontab:
+#      00,10,20,30,40,50 * * * * run_cmd("set/update_ip 192.168.1.5 10.0.0.5")
+#
+#  Author   : Kin EA3CV (ea3cv@cronux.net)                                  
+#
+#  20250405 v1.4
+#        - Added support for custom IPs passed via command-line arguments
+#          You can pass additional local IPs as arguments (e.g., private LAN, Docker)
 #
 
 use 5.10.1;
@@ -34,81 +39,59 @@ use Path::Tiny qw(path);
 use strict;
 use warnings;
 
-my $ip = `curl -s ifconfig.me`;
-my $ips = `hostname -I`;          # -i para Docker, -I para el resto
-chomp($ip);  # Eliminar salto de línea de la IP pública
-
-my $var1 = 'set/var $main::localhost_alias_ipv4 =';
-$ip = "'$ip'";
-my $find1 = 'localhost_alias_ipv4';
-startup($var1, $ip, $find1);
-
+my ($self, $line) = @_;
 my @out;
 
-my $msg1 = $var1 . $ip;
+my @custom_ips = split(/\s+/, $line);
 
-my $var2 = 'set/var @main::localhost_names qw( 127.0.0.1 ::1';
-# Eliminar espacios y saltos de línea finales en $ips antes de concatenar
-$ips =~ s/\s+$//;  # Eliminar espacios extra o salto de línea al final de $ips
-$ips = " $ips)";    # Asegurarse de que el paréntesis esté en la misma línea
+my $ip = `curl -s ifconfig.me`;
+chomp($ip);
+$ip = "'$ip'";
+my $var1 = 'set/var $main::localhost_alias_ipv4 =';
+my $find1 = 'localhost_alias_ipv4';
+startup($var1, $ip, $find1);
+push @out, "$var1 $ip";
+
+my $ips = `hostname -I`;    # -i para Docker, -I para el resto
+$ips =~ s/\s+\$//;
+
+my @default_local = qw(127.0.0.1 ::1);
+my @hostname_ips = split(/\s+/, $ips);
+my @all_ips = (@default_local, @hostname_ips, @custom_ips);
+my $var2 = 'set/var @main::localhost_names qw(' . join(' ', @all_ips) . ')';
 my $find2 = 'localhost_names';
-startup($var2, $ips, $find2);
+startup($var2, '', $find2);
+push @out, $var2;
 
-my $msg2 = $var2 . $ips;
-cmd_import($msg1, $msg2);
+cmd_import($out[0], $out[1]);
 
-# Subrutina para importar el archivo y escribir en el directorio de importación
+return (1, @out);
+
 sub cmd_import {
-    my @out;
-    my $msg1 = shift;
-    my $msg2 = shift;
-
+    my ($msg1, $msg2) = @_;
     my $dir = "/spider/cmd_import";
-    # Crear el directorio si no existe
-    if ( !-d $dir ) {
-        system('mkdir', $dir);
-    }
-
-    my $file = $dir . "/" . 'update_ip';
-
-    open (FH, '>', $file) or die "No se pudo abrir el archivo $file: $!";
-    say FH $msg1;
-    say FH $msg2;
-    close (FH);
-
-    # Añadir a la lista de salida
-    push @out, " Updated Public and Local IPs.";
-    push @out, " ";
+    mkdir $dir unless -d $dir;
+    open(my $fh, '>', "$dir/update_ip") or return;
+    say $fh $msg1;
+    say $fh $msg2;
+    close $fh;
 }
 
-# Subrutina de configuración de inicio
 sub startup {
-    my $var = shift;
-    my $arg = shift;
-    my $find = shift;
+    my ($var, $arg, $find) = @_;
+    my $file = '/spider/scripts/startup';
+    my @lines = path($file)->lines_utf8;
+    my $found = 0;
 
-    my $filename = '/spider/scripts/startup';
-    my @content = path($filename)->lines_utf8;
-
-    my $e = 0;
-    # Recorrer el contenido del archivo y realizar cambios
-    foreach my $row (@content) {
-        if ($row =~ m/$find/) {
-            $row =~ s/.*$find.*/$var $arg/g;
-            path($filename)->spew_utf8(@content);  # Guardar los cambios en el archivo
-            $e = 1;
+    foreach my $line (@lines) {
+        if ($line =~ m/$find/) {
+            $line =~ s/.*$find.*/$var $arg/;
+            $found = 1;
         }
     }
 
-    # Si no se encontró, añadir al final del archivo
-    if ($e == 0) {
-        my $data = <<EOF;
-#
-$var $arg
-EOF
-        path($filename)->append_utf8($data);
+    path($file)->spew_utf8(@lines) if $found;
+    unless ($found) {
+        path($file)->append_utf8("\n#\n$var $arg\n");
     }
 }
-
-# Devolver el resultado
-return (1, @out);
