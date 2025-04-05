@@ -1,26 +1,27 @@
-#!/usr/bin/perl
-
 #
-# List of connected users for use from a mobile app
+#  musers.pl — List connected DXSpider users (type USER only)
 #
-# Use: musers (or mu)
+#  Description:
+#    This script lists all connected users (type "USER") with flags for
+#    registration and password, plus connection type and uptime.
 #
-# Copy in /spider/local_cmd/musers.pl
+#  Usage:
+#    From DXSpider shell: musers   (or create alias 'mu')
 #
-# Kin EA3CV, ea3cv@cronux.net
+#  Installation:
+#    Save as: /spider/local_cmd/musers.pl
 #
-# 20250327 v1.4
+#  Author   : Kin EA3CV (ea3cv@cronux.net)
+#  Version  : 20250406 v1.5
 #
 
 use strict;
 use warnings;
 
 my $self = shift;
-
 return 1 unless $self->priv >= 5;
 
 my $tnow = time();
-my $all_users = 0;
 my @out = (
     " ",
     " List of Connected Users:",
@@ -29,65 +30,41 @@ my @out = (
     " --------  - -  ---------  ---------------"
 );
 
-foreach my $dxchan ( sort { $a->call cmp $b->call } DXChannel::get_all ) {
-    my $call  = $dxchan->call();
-    my $type  = $dxchan->is_node ? "NODE" : "USER";
-    my $sort  = "    ";
+my $count = 0;
+
+foreach my $dxchan (sort { $a->call cmp $b->call } DXChannel::get_all_users) {
+    my $call = $dxchan->call;
     my $isreg = reg($call) ? "R" : " ";
     my $ispass = pass($call) ? "P" : " ";
-    my $name   = $dxchan->user->name || " ";
-    my $conn   = $dxchan->conn;
-    my $ip     = '';
-    my $time_on;
+    my $sort = "    ";
 
-    if ( $dxchan->is_node || $dxchan->is_rbn ) {
-        $sort = "DXSP" if $dxchan->is_spider;
-        $sort = "CLX " if $dxchan->is_clx;
-        $sort = "DXNT" if $dxchan->is_dxnet;
-        $sort = "AR-C" if $dxchan->is_arcluster;
-        $sort = "AK1A" if $dxchan->is_ak1a;
-        $sort = "RBN " if $dxchan->is_rbn;
-    } else {
-        $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
-        $sort = "WEB " if $dxchan->is_web;
-        $sort = "EXT " if $dxchan->conn->isa('ExtMsg');
-    }
-
-    if ($conn) {
-        $ip = $dxchan->hostname;
-        $ip = "AGW Port ($conn->{agwport})" if exists $conn->{agwport};
-    }
+    $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
+    $sort = "WEB " if $dxchan->is_web;
+    $sort = "EXT " if $dxchan->conn->isa('ExtMsg');
 
     my $delta = $tnow - $dxchan->startt;
-    $time_on = sprintf(
-        "%3d d%3d h %3d m",
-        int( $delta / ( 24 * 60 * 60 ) ),
-        int( ( $delta / ( 60 * 60 ) ) % 24 ),
-        int( ( $delta / 60 ) % 60 )
+    my $time_on = sprintf("%3d d%3d h %3d m",
+        int($delta / (24 * 60 * 60)),
+        int(($delta / (60 * 60)) % 24),
+        int(($delta / 60) % 60)
     );
 
-    if ( $type eq "USER" ) {
-        push @out, sprintf( " %-9s $isreg $ispass  $type $sort $time_on", $call );
-    }
+    push @out, sprintf(" %-9s $isreg $ispass  USER $sort $time_on", $call);
+    $count++;
 }
 
-$all_users = scalar DXChannel::get_all_users();
-
-push @out, " ", " Total Users:  $all_users", " ";
+push @out, " ", " Total Users:  $count", " ";
 
 return (1, @out);
 
-# ✅ Corrección aquí:
 sub reg {
     my $call = shift;
-    $call = uc $call;
-    my $ref = DXUser::get_current($call);
-    return defined $ref && defined $ref->{registered} && $ref->{registered} eq "1";
+    my $ref = DXUser::get_current(uc $call);
+    return defined $ref && $ref->{registered} eq "1";
 }
 
 sub pass {
     my $call = shift;
-    $call = uc $call;
-    my $ref = DXUser::get_current($call);
+    my $ref = DXUser::get_current(uc $call);
     return defined $ref && defined $ref->{passwd};
 }
