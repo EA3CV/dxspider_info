@@ -1,82 +1,60 @@
 #
-# List of connected nodes for use from a mobile app
-# for build > 556
+#  mnodes.pl — List connected nodes (excluding local)
 #
-# Use: mnodes (or mn)
+#  Description:
+#    This script lists all connected nodes (type "NODE") excluding
+#    the local node itself, with their connection type and uptime.
 #
-# Copy in /spider/local_cmd/mnodes.pl
+#  Usage:
+#    From DXSpider shell: mnodes   (or alias 'mn')
 #
-# Kin EA3CV, ea3cv@cronux.net
+#  Installation:
+#    Save as: /spider/local_cmd/mnodes.pl
 #
-# 20250130 v1.4
+#  Author   : Kin EA3CV (ea3cv@cronux.net)
+#  Version  : 20250406 v1.5
 #
 
 use strict;
 use warnings;
 
-my $self = shift;
-
+my ($self, $line) = @_;
 return 1 unless $self->priv >= 5;
 
-my $tnow = time();
-my $all_nodes = 0;
-my @out = (" ", " List of Connected Nodes:", " ", " Callsign  R P  Type       Connection Time",
-           " --------  - -  ---------  ---------------");
+my $now = time();
+my $localcall = $main::mycall;
+my @nodes = grep { $_->is_node && $_->call ne $localcall } DXChannel::get_all();
+my @out = (
+    " ",
+    " Connected DXSpider Nodes (excluding local):",
+    " ",
+    " Callsign     Type   ConnType   Uptime",
+    " --------     -----  --------   -----------------"
+);
 
-foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
-    my $call = $dxchan->call();
-    my $type = $dxchan->is_node ? "NODE" : "USER";
-    my $sort = "    ";
-    my $isreg = reg($call) ?  "R" : " ";
-    my $ispass = pass($call) ?  "P" : " ";
-    my $name = $dxchan->user->name || " ";
-    my $conn = $dxchan->conn;
-    my $ip = '';
-    my $time_on;
+foreach my $dxchan (sort { $a->call cmp $b->call } @nodes) {
+    my $call = $dxchan->call;
+    my $type = "NODE";
+    my $conn_type = "????";
 
-    if ($dxchan->is_node) {
-        $sort = "DXSP" if $dxchan->is_spider;
-        $sort = "CLX " if $dxchan->is_clx;
-        $sort = "DXNT" if $dxchan->is_dxnet;
-        $sort = "AR-C" if $dxchan->is_arcluster;
-        $sort = "AK1A" if $dxchan->is_ak1a;
-        $sort = "CCCL" if $dxchan->is_ccluster;
-#       $sort = "RBN " if $dxchan->is_rbn;
-    } else {
-        $sort = "LOCL" if $dxchan->conn->isa('IntMsg');
-        $sort = "WEB " if $dxchan->is_web;
-        $sort = "EXT " if $dxchan->conn->isa('ExtMsg');
-    }
+    if ($dxchan->is_spider)     { $conn_type = "DXSP"; }
+    elsif ($dxchan->is_clx)     { $conn_type = "CLX";  }
+    elsif ($dxchan->is_dxnet)   { $conn_type = "DXNT"; }
+    elsif ($dxchan->is_arcluster){ $conn_type = "AR-C";}
+    elsif ($dxchan->is_ak1a)    { $conn_type = "AK1A"; }
+    elsif ($dxchan->is_ccluster){ $conn_type = "CCCL"; }
 
-    if ($conn) {
-        $ip = $dxchan->hostname;
-        $ip = "AGW Port ($conn->{agwport})" if exists $conn->{agwport};
-    }
+    my $delta = $now - $dxchan->startt;
+    my $uptime = sprintf("%3dd %02dh %02dm",
+        int($delta / 86400),
+        int(($delta % 86400) / 3600),
+        int(($delta % 3600) / 60)
+    );
 
-    my $delta = $tnow - $dxchan->startt;
-    $time_on = sprintf("%3d d%3d h %3d m", int($delta/(24*60*60)), int(($delta/(60*60))%24), int(($delta/60)%60));
-
-    if ($type eq "NODE") {
-        push @out, sprintf(" %-9s $isreg $ispass  $type $sort $time_on", $call);
-    }
+    push @out, sprintf(" %-12s %-6s %-9s %s", $call, $type, $conn_type, $uptime);
 }
 
-$all_nodes = scalar DXChannel::get_all_nodes();
-
-push @out, " ", " Total Nodes:  $all_nodes", " ";
+my $total = scalar(@nodes);
+push @out, " ", " Total connected nodes: $total", " ";
 
 return (1, @out);
-
-sub reg {
-    my $call = shift;
-    $call = uc $call;
-    my $ref = DXUser::get_current($call);
-    return $ref && $ref->{registered} eq "1";
-}
-
-sub pass {
-    my $call = shift;
-    $call = uc $call;
-    my $ref = DXUser::get_current($call);
-    return defined $ref && defined $ref->{passwd};
-}
