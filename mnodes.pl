@@ -49,6 +49,7 @@ foreach my $dxchan (sort { $a->call cmp $b->call } @nodes) {
     push @out, format_node($dxchan, $now);
 }
 
+# Separación y listado de RBN
 if (@rbn_nodes) {
     push @out, " ";
     foreach my $dxchan (sort { $a->call cmp $b->call } @rbn_nodes) {
@@ -56,12 +57,14 @@ if (@rbn_nodes) {
     }
 }
 
-my $total = @nodes + @rbn_nodes - 1;
+# Contador final solo de nodos (excluye RBN)
+my $total = scalar(@nodes);
 push @out, " ", " Total Nodes:  $total", " ";
 
 return (1, @out);
 
-# Subrutina para formato de línea
+# --- Subrutinas auxiliares ---
+
 sub format_node {
     my ($dxchan, $now, $force_sort) = @_;
 
