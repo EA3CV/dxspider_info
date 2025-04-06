@@ -1,16 +1,26 @@
 #
-# set/regpass <callsign> <password>
+# set/regpass.pl — Register and set password for a callsign
 #
-# Unify the registration + password process in a single command
+# Description:
+#   This command performs both:
+#     - set/register <callsign>
+#     - set/password <callsign> <password>
+#   in a single unified operation.
 #
-# It is located in /spider/local_cmd/set/regpass.pl
-# 
-# Only for the Mojo branch
+# Usage:
+#   From DXSpider shell:
+#     set/regpass <callsign> <password>
 #
-# Kin EA3CV, ea3cv@cronux.net
+# Location:
+#   /spider/local_cmd/set/regpass.pl
 #
-# 20230306 v0.0
+# Notes:
+#   - Only for the Mojo branch of DXSpider
 #
+# Author  : Kin EA3CV ea3cv@cronux.net
+# Version : 20250406 v0.1
+#
+
 
 my ($self, $line) = @_;
 my @args = split /\s+/, $line, 2;
