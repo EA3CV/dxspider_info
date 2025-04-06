@@ -1,15 +1,24 @@
 #
-# unset/regpass <callsign>
+# unset/regpass.pl — Unregister and remove password for a callsign
 #
-# Unify the unregistration + unpassword process in a single command
+# Description:
+#   This command performs both:
+#     - unset/register <callsign>
+#     - unset/password <callsign>
+#   in a single unified operation.
 #
-# It is located in /spider/local_cmd/unset/regpass.pl
-# 
-# Only for the Mojo branch
+# Usage:
+#   From DXSpider shell:
+#     unset/regpass <callsign>
 #
-# Kin EA3CV, ea3cv@cronux.net
+# Location:
+#   /spider/local_cmd/unset/regpass.pl
 #
-# 20230306 v0.0 
+# Notes:
+#   - Only for the Mojo branch of DXSpider
+#
+# Author  : Kin EA3CV ea3cv@cronux.net
+# Version : 20250406 v0.1
 #
 
 my ($self, $line) = @_;
