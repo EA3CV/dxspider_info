@@ -1,14 +1,26 @@
 #
-# show/registered
+# show/registered.pl — List all registered users
 #
-# show all registered users
+# Description:
+#   This command displays a list of all users who are currently
+#   registered in the DXSpider system.
 #
-# Copyright (c) 2001 Dirk Koopman G1TLH
+# Usage:
+#   From DXSpider shell:
+#     show/registered
 #
-# Modify by Kin EA3CV, ea3cv@cronux.net
+# Location:
+#   /spider/local_cmd/show/registered.pl
 #
-# 20250403 v0.1
+# Notes:
+#   - Displays only callsigns with the "registered" flag enabled.
 #
+# Author  : Dirk Koopman G1TLH
+#
+# Modified: Kin EA3CV ea3cv@cronux.net
+# Version : 20250406 v0.2
+#
+
 
 sub handle
 {
