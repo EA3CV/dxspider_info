@@ -1,9 +1,9 @@
 #
-#  mnodes.pl — List connected nodes (excluding local)
+#  mnodes.pl — List connected nodes
 #
 #  Description:
-#    This script lists all connected nodes (type "NODE") excluding
-#    the local node itself, with their connection type and uptime.
+#    This script lists all connected nodes, placing the local node first,
+#    followed by other remote nodes (sorted), and then RBN nodes at the end, separated.
 #
 #  Usage:
 #    From DXSpider shell: mnodes   (or alias 'mn')
@@ -12,7 +12,7 @@
 #    Save as: /spider/local_cmd/mnodes.pl
 #
 #  Author   : Kin EA3CV ea3cv@cronux.net
-#  Version  : 20250406 v1.6
+#  Version  : 20250406 v1.7
 #
 
 use strict;
@@ -24,32 +24,39 @@ return 1 unless $self->priv >= 5;
 my $now = time();
 my $localcall = $main::mycall;
 
+my $local_node;
 my @nodes;
 my @rbn_nodes;
 
 foreach my $dxchan (DXChannel::get_all()) {
-    next if $dxchan->call eq $localcall;
+    next unless $dxchan->is_node || $dxchan->is_rbn;
 
     if ($dxchan->is_rbn) {
         push @rbn_nodes, $dxchan;
-    } elsif ($dxchan->is_node) {
+    } elsif ($dxchan->call eq $localcall) {
+        $local_node = $dxchan;
+    } else {
         push @nodes, $dxchan;
     }
 }
 
 my @out = (
     " ",
-    " List of Connected Nodes (excluding local):",
+    " List of Connected Nodes:",
     " ",
     " Callsign  R P  Type       Connection Time",
     " --------  - -  ---------  ---------------"
 );
 
+# Mostrar primero el nodo local (sin afectar al contador)
+push @out, format_node($local_node, $now) if $local_node;
+
+# Luego los nodos remotos ordenados
 foreach my $dxchan (sort { $a->call cmp $b->call } @nodes) {
     push @out, format_node($dxchan, $now);
 }
 
-# Separación y listado de RBN
+# Luego los RBN si los hay
 if (@rbn_nodes) {
     push @out, " ";
     foreach my $dxchan (sort { $a->call cmp $b->call } @rbn_nodes) {
@@ -57,7 +64,7 @@ if (@rbn_nodes) {
     }
 }
 
-# Contador final solo de nodos (excluye RBN)
+# Contador final: solo nodos remotos
 my $total = scalar(@nodes);
 push @out, " ", " Total Nodes:  $total", " ";
 
@@ -74,9 +81,9 @@ sub format_node {
     my $sort   = "    ";
 
     $sort = $force_sort if defined $force_sort;
-    unless ($sort =~ /\S/) {
+    unless ($force_sort) {
         $sort = "DXSP" if $dxchan->is_spider;
-        $sort = "CLX " if $dxchan->is_clx;
+        $sort = "CLX "  if $dxchan->is_clx;
         $sort = "DXNT" if $dxchan->is_dxnet;
         $sort = "AR-C" if $dxchan->is_arcluster;
         $sort = "AK1A" if $dxchan->is_ak1a;
