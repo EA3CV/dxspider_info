@@ -36,7 +36,6 @@
 # Note   : For a good friend... but stubborn.
 #
 
-
 use strict;
 use warnings;
 use Getopt::Long;
@@ -67,8 +66,10 @@ if ($help) {
 unless ($file) {
     my ($sec,$min,$hour,$mday,$mon,$year) = localtime();
     my $day_of_year = strftime("%j", localtime);
+    $year = $year + 1900;
     $file = "/spider/local_data/debug/$year/$day_of_year.dat";
-    print STDERR "ℹ️  No se indicó -f. Se usará automáticamente el fichero: $file\n";
+#    $file = "/root/volumenes/dxspider/nodo-3/local_data/debug/$year/$day_of_year.dat"; # Docker
+    print STDERR " -f was not specified. The file will be used automatically.: $file\n";
 }
 
 my ($sec,$min,$hour,$mday,$mon,$year) = localtime();
@@ -233,20 +234,20 @@ Usage:
 ./search -f <file> -l|-h [-s <start>] [-e <end>] --filter <expression>
 
 Parameters:
--f <file>			File to analyse (format: <day_number>.dat) (optional)
--l 					Use epoch time format (e.g. 1743034000)
--h 					Use human-readable time (YYYYMMDD-HHMMSS or HHMMSS)
--s <start>			Start time (optional)
--e <end> 			End time (optional)
---filter <expr>		Logical expression to filter lines (see examples)
---help, -? S		how this help message
+-f <file>          File to analyse (format: <day_number>.dat) (optional)
+-l                 Use epoch time format (e.g. 1743034000)
+-h                 Use human-readable time (YYYYMMDD-HHMMSS or HHMMSS)
+-s <start>         Start time (optional)
+-e <end>           End time (optional)
+--filter <expr>    Logical expression to filter lines (see examples)
+--help, -? S       How this help message
 
 Valid expressions:
-string						Line containing "string"
-string1|string2				Line containing either "string1" or "string2"
-string1&string2				Line containing both "string1" and "string2"
-(string1|string2)&string3	Grouping with parentheses
-"exact phrase"				For exact matches or strings with spaces/special characters
+string                      Line containing "string"
+string1|string2             Line containing either "string1" or "string2"
+string1&string2             Line containing both "string1" and "string2"
+(string1|string2)&string3   Grouping with parentheses
+"exact phrase"              For exact matches or strings with spaces/special characters
 
 # Epoch timestamp
 ./search -f 086.dat -l -s 1743034000 -e 1743034600 --filter='EA4VV'
