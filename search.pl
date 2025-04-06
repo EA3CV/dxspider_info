@@ -1,11 +1,41 @@
 #!/usr/bin/perl
+#
+# search.pl — Search DXSpider debug logs with time filters and logical expressions
+#
+# Description:
+#   This script allows you to search DXSpider debug files based on a time range
+#   (epoch or human-readable) and logical string filters (AND, OR, quoted, nested).
+#
+#   It highlights matched terms with colours and handles flexible time parsing.
+#
+#   Supports:
+#     - Logical filters: AND (&), OR (|), parentheses, quoted terms
+#     - Time filtering: -s and -e with -l (epoch) or -h (human time)
+#     - Color highlighting for matched terms
+#
+# Usage:
+#   ./search.pl -f <file> -l|-h [-s <start>] [-e <end>] --filter <expression>
+#
+#   See help (-? or --help) for detailed options and examples.
+#
+# Location:
+#   /spider/local_cmd/search.pl
+#
+# Make globally accessible:
+#   To run this script from anywhere:
+#     1. Make it executable: chmod +x /spider/local_cmd/search.pl
+#     2. Create a symbolic link or copy it to a directory in your PATH, e.g.:
+#        sudo ln -s /spider/local_cmd/search.pl /usr/local/bin/search
+#     3. Then simply use: search -f <file> ...
+#
+# Requirements:
+#   Perl core modules only (no external dependencies)
+#
+# Author : Kin EA3CV (ea3cv@cronux.net)
+# Version: 20250406 v1.2
+# Note   : For a good friend... but stubborn.
+#
 
-#
-# Search debug by string(s) and a human time range.
-#
-# Kin
-# 20250329 v1.1
-#
 
 use strict;
 use warnings;
@@ -199,47 +229,51 @@ close $fh;
 sub print_help {
     print <<'USO';
 
-Uso:
-  ./07.pl -f <fichero> -l|-h [-s <time>] [-e <time>] --filter <expresión>
+Usage:
+./search -f <file> -l|-h [-s <start>] [-e <end>] --filter <expression>
 
-Parámetros:
-  -f <fichero>         Fichero a analizar (formato: <número_día>.dat) (opcional)
-  -l                   El tiempo se pasa en formato epoch (ej: 1743034000)
-  -h                   El tiempo se pasa en formato AAAAMMDD-HHMMSS o HHMMSS
-  -s <inicio>          Hora de inicio (opcional)
-  -e <fin>             Hora de fin (opcional)
-  --filter <expresión> Expresión lógica para filtrar líneas (ver ejemplos)
-  --help, -?           Muestra esta ayuda
+Parameters:
+-f <file>			File to analyse (format: <day_number>.dat) (optional)
+-l 					Use epoch time format (e.g. 1743034000)
+-h 					Use human-readable time (YYYYMMDD-HHMMSS or HHMMSS)
+-s <start>			Start time (optional)
+-e <end> 			End time (optional)
+--filter <expr>		Logical expression to filter lines (see examples)
+--help, -? S		how this help message
 
-Expresiones válidas:
-  string                      → Línea que contenga "string"
-  string1|string2             → Línea que contenga "string1" **o** "string2"
-  string1&string2             → Línea que contenga ambos: "string1" **y** "string2"
-  (string1|string2)&string3   → Agrupaciones con paréntesis
-  "texto exacto"              → Para texto con espacios o caracteres especiales
+Valid expressions:
+string						Line containing "string"
+string1|string2				Line containing either "string1" or "string2"
+string1&string2				Line containing both "string1" and "string2"
+(string1|string2)&string3	Grouping with parentheses
+"exact phrase"				For exact matches or strings with spaces/special characters
 
-Ejemplos:
+# Epoch timestamp
+./search -f 086.dat -l -s 1743034000 -e 1743034600 --filter='EA4VV'
+./search -f 086.dat -h -s 20250327-123000 --filter='EA4VV'
+./search -f 086.dat -h -s 123000 -e 125900 --filter='EA4VV'
+./search -f 086.dat --filter='EA4VV'
+./search --filter='EA3CV-2'
 
-  # Epoch timestamp
-  ./07.pl -f 086.dat -l -s 1743034000 -e 1743034600 --filter='EA4VV'
-  ./07.pl -f 086.dat -h -s 20250327-123000 --filter='EA4VV'
-  ./07.pl -f 086.dat -h -s 123000 -e 125900 --filter='EA4VV'
-  ./07.pl -f 086.dat --filter='EA4VV
-  ./07.pl --filter='EA3CV-2'
-  # Varias condiciones con OR
-  ./07.pl -f 086.dat -l --filter='PC61|PC11|PC12'
-  # Varias condiciones con AND
-  ./07.pl -f 086.dat -l -s 1743034000 -e 1743034600 --filter='PC61^14291&EA4VV'
-  ./07.pl -f 086.dat -l -s 1743034000 -e 1743034600 --filter='(PC61^14291)&EA4VV'
-  ./07.pl -f 086.dat -l -s 1743034000 -e 1743034600 --filter='"PC61^14291"&EA4VV'
-  # Combinación AND + OR
-  ./07.pl -f 086.dat --filter='(PC61|PC11)&EA4VV'
-  # Con texto literal entre comillas
-  ./07.pl -f 086.dat --filter='"EA4VV^EA4RCH-5"&PC61'
-  # Formato de hora humana: solo hora
-  ./07.pl -f 086.dat -h -s 123000 -e 125900 --filter='EA4VV'
-  # Formato complejo con AND + OR + texto literal
-  ./07.pl -f 086.dat -l -e 1743034600 --filter='"PC92^EA3CV-2"&(^C^|^K^)&^H28'
+# Multiple OR conditions
+./search -f 086.dat -l --filter='PC61|PC11|PC12'
+
+# Multiple AND conditions
+./search -f 086.dat -l -s 1743034000 -e 1743034600 --filter='PC61^14291&EA4VV'
+./search -f 086.dat -l -s 1743034000 -e 1743034600 --filter='(PC61^14291)&EA4VV'
+./search -f 086.dat -l -s 1743034000 -e 1743034600 --filter='"PC61^14291"&EA4VV'
+
+# Combining AND + OR
+./search -f 086.dat --filter='(PC61|PC11)&EA4VV'
+
+# Literal text in quotes
+./search -f 086.dat --filter='"EA4VV^EA4RCH-5"&PC61'
+
+# Human time format: time only
+./search -f 086.dat -h -s 123000 -e 125900 --filter='EA4VV'
+
+# Complex expression with AND + OR + quoted string
+./search -f 086.dat -l -e 1743034600 --filter='"PC92^EA3CV-2"&(^C^|^K^)&^H28'
 
 USO
 }
