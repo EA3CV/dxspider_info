@@ -2,80 +2,113 @@
 #  update_ip.pl — Update public and local IPs for DXSpider
 #
 #  Description:
-#    Updates two key DXSpider runtime variables:
-#     - $main::localhost_alias_ipv4 : current public IPv4 address
-#     - @main::localhost_names      : list of local IPs (127.0.0.1, ::1, etc.)
+#    Updates DXSpider runtime IP-related variables:
+#      - $main::localhost_alias_ipv4 : public IPv4 address
+#      - $main::localhost_alias_ipv6 : public IPv6 address (if any)
+#      - @main::localhost_names      : list of known local IPs (127.0.0.1, ::1, etc.)
 #
-#    Logs and shows changes if any (added/removed IPs).
+#    This is essential to ensure proper behavior in multi-host, VM, container,
+#    or NAT/firewalled environments where DXSpider needs to recognize internal clients.
+#
+#    It logs and shows changes:
+#      - Public IP changes (IPv4 or IPv6)
+#      - Local IP additions/removals
 #
 #  Usage:
 #    From DXSpider shell (as a self command):
-#      set/update_ip 192.168.1.10 10.0.0.5
+#      set/update_ip                      # Auto-detects current public and local IP
+#      set/update_ip 192.168.1.100        # Adds one or more local LAN IPs
+#      set/update_ip 10.0.0.5 172.18.0.3
 #
 #    From crontab (e.g., every 10 minutes):
-#      00,10,20,30,40,50 * * * * run_cmd("set/update_ip 192.168.1.10 10.0.0.5")
+#      00,10,20,30,40,50 * * * * run_cmd("set/update_ip 192.168.1.100 172.18.0.3")
 #
-#    ⚠️ Only local IP addresses (not public IPs) can be passed as arguments.
+#    ⚠️ Only local IP addresses (not public) should be passed as arguments.
 #
 #  Installation:
 #    Save as: /spider/local_cmd/set/update_ip.pl
 #
 #  Requirements:
-#    - Internet access required to detect public IP
+#    - Internet access to detect public IPs (via curl)
 #
-#  Author : Kin EA3CV ea3cv@cronux.net
-#  Version: 20250407 v1.6
+#  Author  : Kin EA3CV (ea3cv@cronux.net)
+#  Version : 20250407 v1.7
+#
+#  Note:
+#    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
 #
 
 use strict;
 use warnings;
 
 my ($self, $line) = @_;
-my @custom_ips = split(/\s+/, $line);
-
+my @custom = split(/\s+/, $line);
 my @out;
 
-# --- Public IP ---
+# Detect public IP (usually IPv4)
+my $pub_ip = `curl -s ifconfig.me`;
+chomp($pub_ip);
 
-my $new_public_ip = `curl -s ifconfig.me`;
-chomp($new_public_ip);
-my $old_public_ip = $main::localhost_alias_ipv4;
+my $has_ipv4 = $pub_ip =~ /^[\d\.]+$/;
+my $has_ipv6 = $pub_ip =~ /:/;
 
-if ($new_public_ip && $new_public_ip ne $old_public_ip) {
-    $main::localhost_alias_ipv4 = $new_public_ip;
-#    LogDbg("update_ip: Public IP changed from $old_public_ip to $new_public_ip");
-    push @out, "\nPublic IP change: $new_public_ip (previous $old_public_ip)";
+# Handle IPv4
+my $old_ipv4 = $main::localhost_alias_ipv4 || '';
+if ($has_ipv4) {
+    if ($pub_ip ne $old_ipv4) {
+        $main::localhost_alias_ipv4 = $pub_ip;
+        push @out, "\nPublic IPv4 change: $pub_ip (previous $old_ipv4)";
+    } else {
+        push @out, "No public IPv4 change: $pub_ip";
+    }
 } else {
-#    LogDbg("update_ip: No change in public IP ($new_public_ip)");
-    push @out, "\nNo public IP change: $new_public_ip";
+    push @out, "No public IPv4 change: $old_ipv4";
+}
+
+# Handle IPv6
+my $old_ipv6 = $main::localhost_alias_ipv6 || '';
+if ($has_ipv6) {
+    if ($pub_ip ne $old_ipv6) {
+        $main::localhost_alias_ipv6 = $pub_ip;
+        push @out, "Public IPv6 change: $pub_ip (previous $old_ipv6)";
+    } else {
+        push @out, "No public IPv6 change: $pub_ip";
+    }
+} else {
+    push @out, "No public IPv6 change: $old_ipv6";
 }
 
 # --- Local IPs ---
 
 my @system_ips = qw(127.0.0.1 ::1);
-my $hostname_ips = `hostname -I`;
-my @detected = grep { $_ ne '' } split(/\s+/, $hostname_ips);
-my @custom_sorted = sort @custom_ips;
 
-my @combined = (@system_ips, @detected, @custom_sorted);
+my $hostname_ips = `hostname -I`;    # -i Docker
+my @system_detected = split(/\s+/, $hostname_ips);
+chomp(@system_detected);
+
 my %seen;
-@combined = grep { !$seen{$_}++ } @combined;
+my @detected_unique = grep { !$seen{$_}++ } @system_detected;
+
+my @custom_sorted = sort @custom;
+
+my @new_list = (@system_ips, @detected_unique, @custom_sorted);
+%seen = ();
+@new_list = grep { $_ ne '' && !$seen{$_}++ } @new_list;
 
 my @old_list = @main::localhost_names;
 my %old_map = map { $_ => 1 } @old_list;
-my %new_map = map { $_ => 1 } @combined;
+my %new_map = map { $_ => 1 } @new_list;
 
-my @added   = grep { !$old_map{$_} } @combined;
+my @added   = grep { !$old_map{$_} } @new_list;
 my @removed = grep { !$new_map{$_} } @old_list;
 
 if (@added || @removed) {
-    @main::localhost_names = @combined;
-
-#    LogDbg("update_ip: Local IPs updated: +@added -@removed");
-    push @out, "Local IPs changes: @main::localhost_names";
+    @main::localhost_names = @new_list;
+    my $joined = join(' ', @new_list);
+    push @out, "Local IPs changes: $joined";
 } else {
-#    LogDbg("update_ip: No changes to local IPs");
-    push @out, "No local IPs change: @main::localhost_names";
+    my $joined = join(' ', @new_list);
+    push @out, "No local IPs change: $joined";
 }
 
 return (1, @out);
