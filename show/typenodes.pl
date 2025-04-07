@@ -19,12 +19,11 @@
 #
 # Usage:
 #   show/typenodes         # shows all types
-#   show/typenodes         # shows only DXSpider nodes
 #
 #
 # Author: Kin EA3CV, ea3cv@cronux.net
 #
-# 20250403 v0.0
+# 20250407 v0.1
 #
 
 my ($self, $line) = @_;
