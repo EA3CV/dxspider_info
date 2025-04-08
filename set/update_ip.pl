@@ -32,7 +32,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250407 v1.7
+#  Version : 20250408 v1.8
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -45,44 +45,40 @@ my ($self, $line) = @_;
 my @custom = split(/\s+/, $line);
 my @out;
 
-# Detect public IP (usually IPv4)
-my $pub_ip = `curl -s ifconfig.me`;
-chomp($pub_ip);
+# Obtener IPv4 e IPv6 públicas de forma separada
+my $pub_ipv4 = `curl -4 -s ifconfig.me`; chomp($pub_ipv4);
+my $pub_ipv6 = `curl -6 -s ifconfig.me`; chomp($pub_ipv6);
 
-my $has_ipv4 = $pub_ip =~ /^[\d\.]+$/;
-my $has_ipv6 = $pub_ip =~ /:/;
-
-# Handle IPv4
+# --- IPv4 ---
 my $old_ipv4 = $main::localhost_alias_ipv4 || '';
-if ($has_ipv4) {
-    if ($pub_ip ne $old_ipv4) {
-        $main::localhost_alias_ipv4 = $pub_ip;
-        push @out, "\nPublic IPv4 change: $pub_ip (previous $old_ipv4)";
+if ($pub_ipv4 =~ /^[\d\.]+$/) {
+    if ($pub_ipv4 ne $old_ipv4) {
+        $main::localhost_alias_ipv4 = $pub_ipv4;
+        push @out, "\nPublic IPv4 change: $pub_ipv4 (previous $old_ipv4)";
     } else {
-        push @out, "No public IPv4 change: $pub_ip";
+        push @out, "No public IPv4 change: $pub_ipv4";
     }
 } else {
-    push @out, "No public IPv4 change: $old_ipv4";
+    push @out, "No public IPv4 available";
 }
 
-# Handle IPv6
+# --- IPv6 ---
 my $old_ipv6 = $main::localhost_alias_ipv6 || '';
-if ($has_ipv6) {
-    if ($pub_ip ne $old_ipv6) {
-        $main::localhost_alias_ipv6 = $pub_ip;
-        push @out, "Public IPv6 change: $pub_ip (previous $old_ipv6)";
+if ($pub_ipv6 =~ /:/) {
+    if ($pub_ipv6 ne $old_ipv6) {
+        $main::localhost_alias_ipv6 = $pub_ipv6;
+        push @out, "Public IPv6 change: $pub_ipv6 (previous $old_ipv6)";
     } else {
-        push @out, "No public IPv6 change: $pub_ip";
+        push @out, "No public IPv6 change: $pub_ipv6";
     }
 } else {
-    push @out, "No public IPv6 change: $old_ipv6";
+    push @out, "No public IPv6 available";
 }
 
 # --- Local IPs ---
-
 my @system_ips = qw(127.0.0.1 ::1);
 
-my $hostname_ips = `hostname -I`;    # -i Docker
+my $hostname_ips = `hostname -I`;
 my @system_detected = split(/\s+/, $hostname_ips);
 chomp(@system_detected);
 
