@@ -32,7 +32,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250408 v1.8
+#  Version : 20250408 v1.9
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -45,7 +45,7 @@ my ($self, $line) = @_;
 my @custom = split(/\s+/, $line);
 my @out;
 
-# Obtener IPv4 e IPv6 públicas de forma separada
+# Obtener IPv4 e IPv6 públicas por separado
 my $pub_ipv4 = `curl -4 -s ifconfig.me`; chomp($pub_ipv4);
 my $pub_ipv6 = `curl -6 -s ifconfig.me`; chomp($pub_ipv6);
 
@@ -82,14 +82,14 @@ my $hostname_ips = `hostname -I`;
 my @system_detected = split(/\s+/, $hostname_ips);
 chomp(@system_detected);
 
+# Eliminar duplicados globalmente
 my %seen;
-my @detected_unique = grep { !$seen{$_}++ } @system_detected;
-
+my @detected_unique = grep { $_ ne '' && !$seen{$_}++ } @system_detected;
 my @custom_sorted = sort @custom;
 
-my @new_list = (@system_ips, @detected_unique, @custom_sorted);
-%seen = ();
-@new_list = grep { $_ ne '' && !$seen{$_}++ } @new_list;
+my %ip_seen;
+my @new_list = grep { $_ ne '' && !$ip_seen{$_}++ }
+               (@system_ips, @detected_unique, @custom_sorted);
 
 my @old_list = @main::localhost_names;
 my %old_map = map { $_ => 1 } @old_list;
