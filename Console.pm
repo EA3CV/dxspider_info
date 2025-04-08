@@ -29,13 +29,14 @@
 # You can or these with A_BOLD and or A_REVERSE for a different effect
 #
 # Modify by Kin EA3CV
-# 20220503
+# 20250408 v1.0
 
 package main;
 
 $maxkhist = 100;
 $maxshist = 500;
-if ($ENV{'TERM'} =~ /(xterm|ansi)/) {
+if ($ENV{'TERM'} =~ /(xterm|ansi|screen-256color|tmux-256color)/) {
+#if ($ENV{'TERM'} =~ /(xterm|ansi)/) {
 #	$ENV{'TERM'} = 'color_xterm';
 	$foreground = COLOR_WHITE();
 	$background = COLOR_BLACK();
