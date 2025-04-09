@@ -41,6 +41,8 @@
 					SK0MMR         USER RBN    1 d  2 h  23 m
 					SK1MMR         USER RBN    1 d  2 h  23 m
 
+    msg_sysop.pl              Send message to sysop via Telegram 
+
     show/typenodes            Search for nodes by type in the DB
 
     show/registered           Modification of the original command
