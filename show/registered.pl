@@ -18,9 +18,8 @@
 # Author  : Dirk Koopman G1TLH
 #
 # Modified: Kin EA3CV ea3cv@cronux.net
-# Version : 20250406 v0.2
+# Version : 20250409 v0.3
 #
-
 
 sub handle
 {
@@ -60,7 +59,8 @@ sub generate
         unless (keys %call) {
                 for ($action = DXUser::R_FIRST, $count = 0; !$DXUser::dbm->seq($key, $data, $action); $action = DXUser::R_NEXT) {
                         # cambio mínimo aquí ↓
-                        if ($data =~ /"registered":"1"/) {
+#                        if ($data =~ /"registered":"1"/) {
+                        if ($data =~ /"registered":"?1"?/) {
                                 $call{$key} = 1;
                         }
                 }
