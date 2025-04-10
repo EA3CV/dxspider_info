@@ -32,7 +32,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250408 v1.9
+#  Version : 20250409 v1.10
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -106,5 +106,36 @@ if (@added || @removed) {
     my $joined = join(' ', @new_list);
     push @out, "No local IPs change: $joined";
 }
+
+# --- Actualizar el fichero /spider/scripts/startup ---
+my $startup_file = '/spider/scripts/startup';
+
+# Leer líneas existentes
+open(my $in, '<', $startup_file) or die "Cannot open $startup_file: $!";
+my @lines = <$in>;
+close($in);
+
+# Crear nueva configuración
+my $ipv4_line   = "\$main::localhost_alias_ipv4 = '$main::localhost_alias_ipv4';\n";
+my $ipv6_line   = "\$main::localhost_alias_ipv6 = '$main::localhost_alias_ipv6';\n";
+my $names_line  = "\@main::localhost_names = qw(@main::localhost_names);\n";
+
+# Filtrar líneas previas de esas variables
+@lines = grep {
+    !/\$main::localhost_alias_ipv4/ &&
+    !/\$main::localhost_alias_ipv6/ &&
+    !/\@main::localhost_names/
+} @lines;
+
+# Insertar nuevas líneas consecutivas al final
+#push @lines, "\n# Updated localhost IP definitions\n", $ipv4_line, $ipv6_line, $names_line;
+push @lines, $ipv4_line, $ipv6_line, $names_line;
+
+# Escribir el fichero actualizado
+open(my $out_fh, '>', $startup_file) or die "Cannot write to $startup_file: $!";
+print $out_fh @lines;
+close($out_fh);
+
+push @out, "Updated /spider/scripts/startup with current IP definitions.";
 
 return (1, @out);
