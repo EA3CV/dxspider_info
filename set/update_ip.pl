@@ -32,7 +32,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250409 v1.10
+#  Version : 20250409 v1.11
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -116,9 +116,9 @@ my @lines = <$in>;
 close($in);
 
 # Crear nueva configuración
-my $ipv4_line   = "\$main::localhost_alias_ipv4 = '$main::localhost_alias_ipv4';\n";
-my $ipv6_line   = "\$main::localhost_alias_ipv6 = '$main::localhost_alias_ipv6';\n";
-my $names_line  = "\@main::localhost_names = qw(@main::localhost_names);\n";
+my $ipv4_line   = "set/var \$main::localhost_alias_ipv4 = '$main::localhost_alias_ipv4';\n";
+my $ipv6_line   = "set/var \$main::localhost_alias_ipv6 = '$main::localhost_alias_ipv6';\n";
+my $names_line  = "set/var \@main::localhost_names = qw(@main::localhost_names);\n";
 
 # Filtrar líneas previas de esas variables
 @lines = grep {
