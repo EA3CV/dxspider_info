@@ -34,6 +34,8 @@
 #        $id = "1234567890";
 #        $token = "8282824455:SDSDSS6HYHYG07678SDS9VCB009VV";
 #
+#        (note that given id and token variable values are only examples)
+#
 #    - Restart the node for changes to take effect:
 #        shutdown
 #
