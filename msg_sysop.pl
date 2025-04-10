@@ -12,12 +12,12 @@
 #
 #  Usage:
 #    From DXSpider shell (as a self command):
-#      set/msg_sysop <CALL> <SUBJECT> <EMAIL> <MESSAGE>
+#      msg_sysop <CALL> <SUBJECT> <EMAIL> <MESSAGE>
 #
 #    Examples:
-#      set/msg_sysop XX0ABC REGISTER user@example.com Please register my callsign
-#      set/msg_sysop XX0ABC PROBLEM user@example.com Password doesn't work
-#      set/msg_sysop XX0ABC-1 INFO user@example.com Just saying hello
+#      msg_sysop XX0ABC REGISTER user@example.com Please register my callsign
+#      msg_sysop XX0ABC PROBLEM user@example.com Password doesn't work
+#      msg_sysop XX0ABC-1 INFO user@example.com Just saying hello
 #
 #  Installation:
 #    Save as: /spider/local_cmd/msg_sysop.pl
@@ -55,7 +55,7 @@ unless (@args >= 4) {
     return (1,
         "Usage: msg_sysop <CALL> <SUBJECT> <EMAIL> <MESSAGE>",
         "Example:",
-        "  set/msg_sysop XX0ABC REGISTER xx0abc\@example.com Requesting access"
+        "  msg_sysop XX0ABC REGISTER xx0abc\@example.com Requesting access"
     );
 }
 
