@@ -32,7 +32,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250409 v1.11
+#  Version : 20250410 v1.11
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
