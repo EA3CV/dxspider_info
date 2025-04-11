@@ -12,7 +12,7 @@
 #    Save as: /spider/local_cmd/musers.pl
 #
 #  Author   : Kin EA3CV (ea3cv@cronux.net)
-#  Version  : 20250406 v1.5
+#  Version  : 20250411 v1.6
 #
 
 use strict;
