@@ -6,7 +6,7 @@
 
     DXLog.pm                  &Local::log_msg
 
-    DXVars.pm                 Inclusion of id & token for Telegram Bot
+    DXVars.pm                 Inclusion of id & token for Telegram Bot and e-mail settings
 
     Filter.pm                 Reload user filters
 
