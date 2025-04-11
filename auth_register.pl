@@ -112,7 +112,7 @@ if ($use_telegram) {
 }
 
 return (1,
-    "✔️ Registration completed for $found->{call}",
+    "   Registration completed for $found->{call}",
     "   Email: $found->{email}",
     "   IP:    $found->{ip}",
     "   Pass:  $found->{pass}"
