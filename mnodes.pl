@@ -12,7 +12,7 @@
 #    Save as: /spider/local_cmd/mnodes.pl
 #
 #  Author   : Kin EA3CV ea3cv@cronux.net
-#  Version  : 20250406 v1.7
+#  Version  : 20250411 v1.8
 #
 
 use strict;
@@ -103,7 +103,7 @@ sub format_node {
 sub reg {
     my $call = shift;
     my $ref = DXUser::get_current(uc $call);
-    return defined $ref && $ref->{registered} eq "1";
+    return defined $ref && defined $ref->{registered} && $ref->{registered} eq "1";
 }
 
 sub pass {
