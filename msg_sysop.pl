@@ -52,7 +52,7 @@
 #
 #  Author  :  Kin EA3CV (ea3cv@cronux.net)
 #
-#  Version : 20250411 v0.2
+#  Version : 20250411 v0.3
 #
 
 use strict;
@@ -134,7 +134,7 @@ Kin EA3CV
 EMAIL
 
     eval {
-        Local::send_email($email, "Recibido mensaje / Received message from $main::mycall", $body);
+        Local::send_email($email, "Recibido mensaje / Received message from $call", $body);
     };
 }
 
