@@ -1,58 +1,28 @@
 #
-#  msg_sysop.pl — Send message to sysop via Telegram and/or Email
+#  msg_sysop.pl — Send message to sysop via Telegram and handle REGISTRO
 #
 #  Description:
-#    This script allows users to send a message to the sysop via the `msg_sysop` command.
-#
-#    It can be used independently or as part of the automated registration/password system.
-#    When the subject includes REGISTER or REGISTRO:
-#      - Generates a random password
-#      - Saves registration data to `/spider/local_data/pending_reg.txt`
-#      - Sends a bilingual confirmation email to the user
-#
-#    All messages:
-#      - Can be sent to the sysop via Telegram and/or Email
-#      - Are logged with full details: call, subject, email, IP, and content
+#    Sends a user message to the sysop via Telegram and/or email.
+#    If the subject contains "REGISTER"/"REGISTRO", the call/email/IP is stored
+#    in pending_reg.txt and the user receives a confirmation email.
 #
 #  Usage:
 #    msg_sysop <CALL> <SUBJECT> <EMAIL> <MESSAGE>
-#
-#    Examples:
+#    Example:
 #      msg_sysop XX0ABC REGISTER xx0abc@example.com Requesting access
-#      msg_sysop XX0ABC "Feedback" xx0abc@example.com Me falla el comando connect
-#
-#  Configuration:
-#    Configuration is managed from DXVars.pm.
-#
-#    Add the following block at the end of DXVars.pm before the final `1;`:
-#
-#    # Telegram config
-#    $id = "<telegram_chat_id>";
-#    $token = "<telegram_bot_token>";
-#
-#    # Email SMTP config
-#    $email_enable = 1;                  # Enable email sending (1 = yes, 0 = no)
-#    $email_from   = 'your@email.com';   # Sender address
-#    $email_smtp   = 'smtp.example.com'; # SMTP server
-#    $email_port   = 587;                # SMTP port (587 for STARTTLS, 465 for SSL)
-#    $email_user   = 'your@email.com';   # SMTP user
-#    $email_pass   = 'app-password';     # SMTP password or app token
-#
-#    # Telegram control (1 = send Telegram messages, 0 = do not send)
-#    $use_telegram = 1;
 #
 #  Installation:
-#    Save this script as: /spider/local_cmd/msg_sysop.pl
+#    Save as: /spider/local_cmd/msg_sysop.pl
 #
-#  Related:
-#    If using the full registration/password system, this script is used by:
-#      - msg_sysop       : sends user feedback and registration requests
-#      - auth_register   : validates a pending registration
-#      - deny_register   : rejects a pending registration
+#  Requirements:
+#    - DXVars.pm with Telegram and email config
 #
-#  Author  :  Kin EA3CV (ea3cv@cronux.net)
+#  Config:
+#    $use_telegram = 1;    # Enable Telegram notifications
+#    $use_email    = 1;    # Enable user email confirmation
 #
-#  Version : 20250411 v0.3
+#  Author  : Kin EA3CV (ea3cv@cronux.net)
+#  Version : 20250411 v0.4
 #
 
 use strict;
@@ -63,6 +33,18 @@ use List::Util qw(first);
 use Digest::SHA qw(sha1_hex);
 
 my $use_telegram = 1;
+my $use_email    = 1;
+
+# Editable confirmation email body (bilingual)
+my $confirm_body = <<"EMAIL";
+En breve recibira una respuesta.
+Saludos.
+
+You will receive a response shortly.
+Regards,
+
+$main::myname $main::myalias
+EMAIL
 
 my ($self, $line) = @_;
 
@@ -122,33 +104,25 @@ if ($subject =~ /\b(register|registro)\b/i) {
         push @out, "Error writing $file: $@\n";
     }
 
-    # Email de confirmación al usuario
-    my $body = <<"EMAIL";
-En breve recibira una respuesta.
-Saludos.
-
-You will receive a response shortly.
-Regards,
-
-Kin EA3CV
-EMAIL
-
-    eval {
-        Local::send_email($email, "Recibido mensaje / Received message from $call", $body);
-    };
+    if ($use_email) {
+        eval {
+            Local::send_email($email, "Recibido mensaje para el sysop de $main::mycall", $confirm_body);
+        };
+    }
 }
 
+# Telegram to sysop
 if ($use_telegram) {
-    my $payload = <<"END_MSG";
-📡 *Message from DXSpider $main::mycall:*
+    my $payload = <<"TELEGRAM";
+📡 *Message from DXSpider command:*
 *Call:* $call
 *Subject:* $subject
 *Email:* $email
-*Sent by:* $real_call
+*Sent by:* $real_call ($ip)
 *IP:* $ip
 
 $message
-END_MSG
+TELEGRAM
 
     eval {
         Local::telegram($payload);
@@ -156,7 +130,9 @@ END_MSG
     push @out, "Warning: Telegram send failed: $@" if $@;
 }
 
-my $sysop_body = <<"BODY";
+# Email internal sysop copy
+if ($use_email) {
+    my $sysop_body = <<"SYSMSG";
 New message via msg_sysop command:
 
 Call: $call
@@ -165,11 +141,12 @@ Email: $email
 IP: $ip
 Message: $message
 
-BODY
+SYSMSG
 
-eval {
-    Local::send_email($main::email_from, "Message received from $call ($subject) in $main::mycall", $sysop_body);
-};
+    eval {
+        Local::send_email("ea3cv\@cronux.net", "Message received from $call ($subject)", $sysop_body);
+    };
+}
 
 push @out, "Message sent to sysop.";
 push @out, " ";
@@ -182,6 +159,6 @@ push @out, " ";
 return (1, @out);
 
 sub generate_password {
-    my @chars = ('A'..'Z', 'a'..'z', 0..9, qw/[] . - = % & \$/);
+    my @chars = ('A'..'Z', 'a'..'z', 0..9, qw/[] . - = % & $/);
     return join('', map { $chars[int rand @chars] } 1..8);
 }
