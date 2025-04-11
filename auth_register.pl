@@ -22,7 +22,7 @@
 #    $use_telegram = 1;      # Enable/disable Telegram message to sysop
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.2
+#  Version : 20250411 v0.3
 #
 
 use strict;
@@ -32,6 +32,27 @@ use Local;
 
 my $use_telegram = 1;
 my $use_email    = 1;
+
+# Editable message templates for user notification (ES + EN)
+my $msg_es = <<"ES";
+Se ha aceptado su solicitud de registro
+
+Usuario: %CALL%
+Password: %PASS%
+
+Use el comando \`set/password\` para cambiar la contraseña si lo desea.
+Disfrute.
+ES
+
+my $msg_en = <<"EN";
+Your registration request has been approved.
+
+User: %CALL%
+Password: %PASS%
+
+You can use the \`set/password\` command to change your password if you wish.
+Enjoy.
+EN
 
 my ($self, $line) = @_;
 
@@ -75,26 +96,9 @@ $ref->passwd($found->{pass});
 $ref->put();
 
 if ($use_email) {
-    my $body = <<"EMAIL";
-
-Se ha aceptado su solicitud de registro
-
-Usuario: $found->{call}
-Password: $found->{pass}
-
-Use el comando `set/password` para cambiar la contrasena si lo desea.
-Disfrute.
-
-Your registration request has been approved.
-
-User: $found->{call}
-Password: $found->{pass}
-
-You can use the `set/password` command to change your password if you wish.
-Enjoy.
-
-$main::myname $main::myalias
-EMAIL
+    my $body = $msg_es . "\n\n" . $msg_en . "\n\n$main::myname $main::myalias";
+    $body =~ s/%CALL%/$found->{call}/g;
+    $body =~ s/%PASS%/$found->{pass}/g;
 
     Local::send_email(
         $found->{email},
