@@ -15,7 +15,7 @@
 #    - `pending_reg.txt` file with pending entries
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.0
+#  Version : 20250411 v0.1
 #
 
 use strict;
@@ -23,8 +23,8 @@ use warnings;
 use DXUser;
 use Local;
 
-my $use_telegram = 1;
-my $email_enable = 1;
+my $use_telegram  = 1;
+my $email_enable  = 1;
 
 my ($self, $line) = @_;
 
@@ -33,10 +33,10 @@ unless ($line =~ /^\s*(\S+)/) {
 }
 
 my $target_call = uc($1);
-my $file = "/spider/local_data/pending_reg.txt";
-my $tempfile = "/spider/local_data/pending_reg.tmp";
+my $file        = "/spider/local_data/pending_reg.txt";
+my $tempfile    = "/spider/local_data/pending_reg.tmp";
 
-open(my $in, '<', $file) or return (1, "❌ Cannot open $file: $!");
+open(my $in,  '<', $file)     or return (1, "❌ Cannot open $file: $!");
 open(my $out, '>', $tempfile) or return (1, "❌ Cannot create $tempfile: $!");
 
 my $found;
@@ -62,15 +62,15 @@ unless ($found) {
     return (1, "❌ No pending request found for $target_call.");
 }
 
-# Email to user (bilingual)
+# Notify user by email (bilingual)
 if ($email_enable) {
     my $msg = <<"EMAIL";
-Lamentamos informarle que su solicitud de acceso para $found->{call} ha sido denegada en $main:mycall.
+Lamentamos informarle que su solicitud de acceso para $found->{call} ha sido denegada en $main::mycall.
 
 No cumple con los criterios requeridos.
 Puede intentarlo más adelante si lo desea.
 
-We regret to inform you that your access request for $found->{call} has been denied on $main:mycall.
+We regret to inform you that your access request for $found->{call} has been denied on $main::mycall.
 
 It does not meet the required criteria.
 You may try again later if you wish.
@@ -79,14 +79,18 @@ $main::myname $main::myalias
 EMAIL
 
     eval {
-        Local::send_email($found->{email}, "Solicitud de acceso denegada / Access request denied", $msg);
+        Local::send_email(
+            $found->{email},
+            "Solicitud de acceso denegada / Access request denied for $found->{call} on $main::mycall",
+            $msg
+        );
     };
 }
 
-# Telegram to sysop
+# Telegram notification to sysop
 if ($use_telegram) {
     eval {
-        Local::telegram("❌ Registration denied for $found->{call} in $main::mycall");
+        Local::telegram("❌ Registration denied for $found->{call} on $main::mycall");
     };
 }
 
