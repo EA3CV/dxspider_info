@@ -1,8 +1,8 @@
 #
-#  musers.pl — List connected DXSpider users (type USER only)
+#  musers.pl — List connected DXSpider users
 #
 #  Description:
-#    This script lists all connected users (type "USER") with flags for
+#    This script lists all connected users with flags for
 #    registration and password, plus connection type and uptime.
 #
 #  Usage:
@@ -60,7 +60,7 @@ return (1, @out);
 sub reg {
     my $call = shift;
     my $ref = DXUser::get_current(uc $call);
-    return defined $ref && $ref->{registered} eq "1";
+    return defined $ref && defined $ref->{registered} && $ref->{registered} eq "1";
 }
 
 sub pass {
