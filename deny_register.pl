@@ -15,7 +15,7 @@
 #    - `pending_reg.txt` file with pending entries
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.1
+#  Version : 20250411 v0.2
 #
 
 use strict;
@@ -25,6 +25,21 @@ use Local;
 
 my $use_telegram  = 1;
 my $email_enable  = 1;
+
+# Editable message templates (ES + EN)
+my $msg_es = <<"ES";
+Lamentamos informarle que su solicitud de acceso para %CALL% ha sido denegada en $main::mycall.
+
+No cumple con los criterios requeridos.
+Puede intentarlo más adelante si lo desea.
+ES
+
+my $msg_en = <<"EN";
+We regret to inform you that your access request for %CALL% has been denied on $main::mycall.
+
+It does not meet the required criteria.
+You may try again later if you wish.
+EN
 
 my ($self, $line) = @_;
 
@@ -62,27 +77,16 @@ unless ($found) {
     return (1, "❌ No pending request found for $target_call.");
 }
 
-# Notify user by email (bilingual)
+# Notify user by email
 if ($email_enable) {
-    my $msg = <<"EMAIL";
-Lamentamos informarle que su solicitud de acceso para $found->{call} ha sido denegada en $main::mycall.
-
-No cumple con los criterios requeridos.
-Puede intentarlo más adelante si lo desea.
-
-We regret to inform you that your access request for $found->{call} has been denied on $main::mycall.
-
-It does not meet the required criteria.
-You may try again later if you wish.
-
-$main::myname $main::myalias
-EMAIL
+    my $body = $msg_es . "\n\n" . $msg_en . "\n\n$main::myname $main::myalias";
+    $body =~ s/%CALL%/$found->{call}/g;
 
     eval {
         Local::send_email(
             $found->{email},
             "Solicitud de acceso denegada / Access request denied for $found->{call} on $main::mycall",
-            $msg
+            $body
         );
     };
 }
@@ -95,7 +99,7 @@ if ($use_telegram) {
 }
 
 return (1,
-    "✔️ Registration denied for $found->{call}",
+    "   Registration denied for $found->{call}",
     "   Email: $found->{email}",
     "   IP:    $found->{ip}"
 );
