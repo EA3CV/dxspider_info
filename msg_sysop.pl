@@ -130,22 +130,21 @@ Saludos.
 You will receive a response shortly.
 Regards,
 
-$main::myname $main::myalias
+Kin EA3CV
 EMAIL
 
     eval {
-        Local::send_email($email, "Received message for $main::mycall", $body);
+        Local::send_email($email, "Received message for $main::mycall for $main::mycall", $body);
     };
 }
 
-# Enviar mensaje al sysop por Telegram (opcional)
 if ($use_telegram) {
     my $payload = <<"END_MSG";
-📡 *Message from DXSpider command:*
+📡 *Message from DXSpider $main::mycall:*
 *Call:* $call
 *Subject:* $subject
 *Email:* $email
-*Sent by:* $real_call ($ip)
+*Sent by:* $real_call
 *IP:* $ip
 
 $message
@@ -157,7 +156,6 @@ END_MSG
     push @out, "Warning: Telegram send failed: $@" if $@;
 }
 
-# Enviar email interno al sysop con la info completa
 my $sysop_body = <<"BODY";
 New message via msg_sysop command:
 
@@ -170,7 +168,7 @@ Message: $message
 BODY
 
 eval {
-    Local::send_email($main::email_from, "Message received from $call ($subject)", $sysop_body);
+    Local::send_email($main::email_from, "Message received from $call ($subject) in $main::mycall", $sysop_body);
 };
 
 push @out, "Message sent to sysop.";
