@@ -22,7 +22,7 @@
 #    $use_telegram = 1;      # Enable/disable Telegram message to sysop
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v1.2
+#  Version : 20250411 v0.2
 #
 
 use strict;
@@ -82,14 +82,15 @@ Se ha aceptado su solicitud de registro
 Usuario: $found->{call}
 Password: $found->{pass}
 
+Use el comando `set/password` para cambiar la contrasena si lo desea.
 Disfrute.
-
 
 Your registration request has been approved.
 
 User: $found->{call}
 Password: $found->{pass}
 
+You can use the `set/password` command to change your password if you wish.
 Enjoy.
 
 $main::myname $main::myalias
@@ -97,7 +98,7 @@ EMAIL
 
     Local::send_email(
         $found->{email},
-        "Aceptada su solicitud de registro/Registration accepted  $found->{call} at $main::mycall",
+        "Aceptada su solicitud de registro / Registration accepted $found->{call} at $main::mycall",
         $body
     );
 }
