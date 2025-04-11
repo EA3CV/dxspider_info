@@ -4,7 +4,7 @@
 #
 # Copyright (c) 1998-2007 - Dirk Koopman G1TLH
 #
-#
+# Modified for use of Telegram and email 20250411
 
 package main;
 
@@ -56,5 +56,14 @@ $do_xml = 0;
 # Telegram Bot by Kin EA3CV
 $id = "xxxxxxxxx";
 $token = "xxxxxxxxxxxxxxxxxxx";
+
+# Email SMTP config for answering register queries, etc.
+# (following data is not real, just an example
+$email_enable = 1;
+$email_from = 'user@example.com';
+$email_smtp = 'smtp.example.com';
+$email_port = 587;                 # Port 587 for STARTTLS/Port 465 for SSL)
+$email_user = 'user@example.com';
+$email_pass = 'MyPaSsW0rd';
 
 1;
