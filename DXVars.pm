@@ -58,7 +58,7 @@ $id = "xxxxxxxxx";
 $token = "xxxxxxxxxxxxxxxxxxx";
 
 # Email SMTP config for answering register queries, etc.
-# (following data is not real, just an example
+# (following data is not real, just an example)
 $email_enable = 1;
 $email_from = 'user@example.com';
 $email_smtp = 'smtp.example.com';
