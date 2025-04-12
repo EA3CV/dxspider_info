@@ -7,7 +7,7 @@
 # Modified by Kin EA3CV with the inestimable help of Dirk
 # ea3cv@cronux.net
 #
-# 20250412 v7.1
+# 20250412 v7.2
 #
 
 package Local;
@@ -396,12 +396,18 @@ sub send_email {
     my ($to, $subject, $body) = @_;
 
     return unless $main::email_enable;
-    print "📨 Intentando enviar email a $to...\n";
+
+    # Logs básicos
+    LogDbg('mail', "Preparing to send email to $to");
+    LogDbg('mail', "SMTP: $main::email_smtp");
+    LogDbg('mail', "Port: $main::email_port");
+    LogDbg('mail', "From: $main::email_from");
+    LogDbg('mail', "User: $main::email_user");
 
     my $smtp;
 
     if ($main::email_port == 465) {
-        print "🔐 Conectando por SSL a $main::email_smtp:$main::email_port\n";
+        LogDbg('mail', "Connecting via SSL to $main::email_smtp :$main::email_port");
         $smtp = Net::SMTP::SSL->new(
             $main::email_smtp,
             Port    => $main::email_port,
@@ -410,7 +416,7 @@ sub send_email {
             Debug   => 1,
         );
     } else {
-        print "📡 Conectando por STARTTLS a $main::email_smtp:$main::email_port\n";
+        LogDbg('mail', "Connecting via STARTTLS to $main::email_smtp :$main::email_port");
         $smtp = Net::SMTP->new(
             $main::email_smtp,
             Port    => $main::email_port,
@@ -420,23 +426,30 @@ sub send_email {
         );
 
         unless ($smtp && $smtp->starttls) {
-            print "❌ Error al iniciar STARTTLS\n";
+            LogDbg('mail', "Error starting STARTTLS");
             return;
         }
     }
 
     unless ($smtp) {
-        print "❌ No se pudo conectar a $main::email_smtp:$main::email_port\n";
+        LogDbg('mail', "Could not connect to $main::email_smtp on port $main::email_port");
         return;
     }
 
     unless ($smtp->auth($main::email_user, $main::email_pass)) {
-        print "❌ Fallo de autenticación SMTP para $main::email_user\n";
+        LogDbg('mail', "SMTP authentication failed for $main::email_user");
         return;
     }
 
-    $smtp->mail($main::email_from);
-    $smtp->to($to);
+    unless ($smtp->mail($main::email_from)) {
+        LogDbg('mail', "MAIL FROM failed for $main::email_from");
+        return;
+    }
+
+    unless ($smtp->to($to)) {
+        LogDbg('mail', "RCPT TO failed for $to");
+        return;
+    }
 
     $smtp->data();
     $smtp->datasend("From: $main::email_from\n");
@@ -448,13 +461,14 @@ sub send_email {
     my $ok = $smtp->dataend();
 
     if ($ok) {
-        print "✅ Email enviado correctamente a $to\n";
+        LogDbg('mail', "Email successfully sent to $to");
     } else {
-        print "❌ Error en el envío de datos SMTP a $to\n";
+        LogDbg('mail', "Error sending SMTP data to $to");
     }
 
     $smtp->quit;
 }
+
 
 1;
 __END__
