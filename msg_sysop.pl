@@ -22,7 +22,7 @@
 #    $use_email    = 1;    # Enable user email confirmation
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.4
+#  Version : 20250412 v0.5
 #
 
 use strict;
@@ -31,6 +31,7 @@ use Local;
 use File::Path qw(make_path);
 use List::Util qw(first);
 use Digest::SHA qw(sha1_hex);
+use POSIX qw(strftime);
 
 my $use_telegram = 1;
 my $use_email    = 1;
@@ -69,10 +70,14 @@ my @out;
 if ($subject =~ /\b(register|registro)\b/i) {
     my $file = "/spider/local_data/pending_reg.txt";
     my $password = generate_password();
-    my $entry = uc($call) . ",$password,$ip,$email";
+    my $now = strftime("%Y%m%d-%H%M%S", localtime);
+    my $date = substr($now, 0, 8);  # para el límite diario por IP
+
+    my $entry = join(',', $now, '00000000-000000', 'PENDING ', uc($call), $password, $ip, $email);
 
     my @lines;
     my $found = 0;
+    my $ip_count = 0;
 
     eval {
         unless (-d "/spider/local_data") {
@@ -84,7 +89,13 @@ if ($subject =~ /\b(register|registro)\b/i) {
             open my $rfh, '<', $file or die "Cannot read $file: $!";
             while (my $line = <$rfh>) {
                 chomp $line;
-                if ($line =~ /^$call,/i) {
+
+                # Contar registros por IP en la fecha actual
+                if ($line =~ /^(\d{8})-\d{6},.*?,.*?,.*?,.*?,$ip,/) {
+                    $ip_count++ if $1 eq $date;
+                }
+
+                if ($line =~ /,$call,/i) {
                     push @lines, $entry;
                     $found = 1;
                 } else {
@@ -94,12 +105,18 @@ if ($subject =~ /\b(register|registro)\b/i) {
             close $rfh;
         }
 
+        if ($ip_count >= 10) {
+            push @out, "Request denied: Too many registrations from IP $ip today.";
+            return (1, @out);
+        }
+
         push @lines, $entry unless $found;
 
         open my $wfh, '>', $file or die "Cannot write $file: $!";
         print $wfh "$_\n" for @lines;
         close $wfh;
     };
+
     if ($@) {
         push @out, "Error writing $file: $@\n";
     }
