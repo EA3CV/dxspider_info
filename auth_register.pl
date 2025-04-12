@@ -21,19 +21,19 @@
 #    $use_email    = 1;      # Enable/disable email notification to user
 #    $use_telegram = 1;      # Enable/disable Telegram message to sysop
 #
-#  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.3
+#  auth_register.pl — Authorize a pending registration in DXSpider
+#  Version : 20250412 v0.4
 #
 
 use strict;
 use warnings;
 use DXUser;
 use Local;
+use POSIX qw(strftime);
 
 my $use_telegram = 1;
 my $use_email    = 1;
 
-# Editable message templates for user notification (ES + EN)
 my $msg_es = <<"ES";
 Se ha aceptado su solicitud de registro
 
@@ -61,25 +61,29 @@ unless ($line =~ /^\s*(\S+)/) {
 }
 
 my $target_call = uc($1);
-my $file     = "/spider/local_data/pending_reg.txt";
-my $tempfile = "/spider/local_data/pending_reg.tmp";
+my $file        = "/spider/local_data/pending_reg.txt";
+my $tempfile    = "/spider/local_data/pending_reg.tmp";
+my $now         = strftime("%Y%m%d-%H%M%S", localtime);
 
 open(my $in,  '<', $file)     or return (1, "❌ Cannot open $file: $!");
 open(my $out, '>', $tempfile) or return (1, "❌ Cannot create $tempfile: $!");
 
 my $found;
 while (my $line = <$in>) {
-    if ($line =~ /^($target_call),([^,]+),([^,]+),([^\s\r\n]+)/i) {
-        my ($call, $pass, $ip, $email) = ($1, $2, $3, $4);
+    chomp $line;
+    my @f = split(/,/, $line, 7);  # Nos aseguramos de no romper el email
+    if (uc($f[3]) eq $target_call) {
         $found = {
-            call  => $call,
-            pass  => $pass,
-            ip    => $ip,
-            email => $email,
+            call  => $f[3],
+            pass  => $f[4],
+            ip    => $f[5],
+            email => $f[6],
         };
-        next;
+        $f[1] = $now;               # Fecha de resolución
+        $f[2] = 'ACCEPTED';        # Estado con 8 caracteres
+        $line = join(',', @f);
     }
-    print $out $line;
+    print $out "$line\n";
 }
 
 close($in);
