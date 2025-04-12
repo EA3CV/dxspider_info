@@ -1,72 +1,74 @@
 #
-#  deny_register.pl — Deny registration request and notify user
+#  deny_register.pl — Deny a pending registration in DXSpider
 #
 #  Description:
-#    This script removes a pending registration request and notifies the user by email
-#    and optionally via Telegram.
+#    Marks a pending registration as DENIED in pending_reg.txt.
+#    Notifies the user via email and the sysop via Telegram (optional).
 #
 #  Usage:
-#    deny_reg <CALL>
-#
-#  This script is used as part of the registration/password system.
+#    From DXSpider shell:
+#      deny_register <CALLSIGN>
 #
 #  Requirements:
-#    - DXVars config with Telegram and Email settings
-#    - `pending_reg.txt` file with pending entries
+#    - Entry in /spider/local_data/pending_reg.txt
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250411 v0.2
+#  Version : 20250412 v0.3
 #
 
 use strict;
 use warnings;
-use DXUser;
 use Local;
+use POSIX qw(strftime);
 
-my $use_telegram  = 1;
-my $email_enable  = 1;
+my $use_telegram = 1;
+my $use_email    = 1;
 
-# Editable message templates (ES + EN)
+# Mensaje para el usuario rechazado (ES + EN)
 my $msg_es = <<"ES";
-Lamentamos informarle que su solicitud de acceso para %CALL% ha sido denegada en $main::mycall.
+Se ha denegado su solicitud de registro.
 
-No cumple con los criterios requeridos.
-Puede intentarlo más adelante si lo desea.
+Si cree que esto es un error, puede contactar con el administrador.
+Gracias.
 ES
 
 my $msg_en = <<"EN";
-We regret to inform you that your access request for %CALL% has been denied on $main::mycall.
+Your registration request has been denied.
 
-It does not meet the required criteria.
-You may try again later if you wish.
+If you believe this is a mistake, please contact the administrator.
+Thank you.
 EN
 
 my ($self, $line) = @_;
 
 unless ($line =~ /^\s*(\S+)/) {
-    return (1, "Usage: deny_reg <CALL>");
+    return (1, "Usage: deny_register <CALLSIGN>");
 }
 
 my $target_call = uc($1);
 my $file        = "/spider/local_data/pending_reg.txt";
 my $tempfile    = "/spider/local_data/pending_reg.tmp";
+my $now         = strftime("%Y%m%d-%H%M%S", localtime);
 
 open(my $in,  '<', $file)     or return (1, "❌ Cannot open $file: $!");
 open(my $out, '>', $tempfile) or return (1, "❌ Cannot create $tempfile: $!");
 
 my $found;
 while (my $line = <$in>) {
-    if ($line =~ /^($target_call),([^,]+),([^,]+),([^\s\r\n]+)/i) {
-        my ($call, $pass, $ip, $email) = ($1, $2, $3, $4);
+    chomp $line;
+    my @f = split(/,/, $line, 7);
+    if (uc($f[3]) eq $target_call) {
         $found = {
-            call  => $call,
-            pass  => $pass,
-            ip    => $ip,
-            email => $email,
+            call  => $f[3],
+            pass  => $f[4],
+            ip    => $f[5],
+            email => $f[6],
         };
-        next;
+        $f[1] = $now;
+        $f[2] = 'DENIED  ';
+        $line = join(',', @f);
     }
-    print $out $line;
+    print $out "$line\n";
 }
 
 close($in);
@@ -74,28 +76,21 @@ close($out);
 rename $tempfile, $file;
 
 unless ($found) {
-    return (1, "❌ No pending request found for $target_call.");
+    return (1, "❌ No pending registration found for $target_call.");
 }
 
-# Notify user by email
-if ($email_enable) {
+if ($use_email) {
     my $body = $msg_es . "\n\n" . $msg_en . "\n\n$main::myname $main::myalias";
-    $body =~ s/%CALL%/$found->{call}/g;
 
-    eval {
-        Local::send_email(
-            $found->{email},
-            "Solicitud de acceso denegada / Access request denied for $found->{call} on $main::mycall",
-            $body
-        );
-    };
+    Local::send_email(
+        $found->{email},
+        "Denegada su solicitud de registro / Registration denied $found->{call} at $main::mycall",
+        $body
+    );
 }
 
-# Telegram notification to sysop
 if ($use_telegram) {
-    eval {
-        Local::telegram("❌ Registration denied for $found->{call} on $main::mycall");
-    };
+    Local::telegram("❌ DENIED registration of $found->{call} from $found->{ip}");
 }
 
 return (1,
