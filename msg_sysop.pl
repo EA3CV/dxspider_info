@@ -15,7 +15,8 @@
 #    Save as: /spider/local_cmd/msg_sysop.pl
 #
 #  Requirements:
-#    - DXVars.pm with Telegram and email config
+#    - /spider/local/DXVars.pm with Telegram and email config
+#    - /spider/local/Local.pm must be updated too.
 #
 #  Config:
 #    $use_telegram = 1;    # Enable Telegram notifications
