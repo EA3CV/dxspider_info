@@ -161,7 +161,7 @@ Message: $message
 SYSMSG
 
     eval {
-        Local::send_email("ea3cv\@cronux.net", "Message received from $call ($subject)", $sysop_body);
+        Local::send_email($main::email_from, "Message received from $call ($subject)", $sysop_body);
     };
 }
 
