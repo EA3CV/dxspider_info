@@ -1,13 +1,33 @@
-# File: /spider/local/Local.pm
-
 #
-# Send all incoming traffic to MQTT/JSON
-# From build 431 and up
+#  Local.pm — Send DXSpider traffic to MQTT in JSON format
 #
-# Modified by Kin EA3CV with the inestimable help of Dirk
-# ea3cv@cronux.net
+#  Description:
+#    Sends selected DXSpider traffic (SPOTS, ANN, WWV, WCY, RBN, etc.)
+#    to a local MQTT broker in JSON format.
+#    Also handles Telegram alerts and optional email notifications.
 #
-# 20250412 v7.3
+#  Usage:
+#    Loaded automatically by DXSpider. No direct invocation required.
+#
+#  Installation:
+#    Save as: /spider/local/Local.pm
+#
+#  Requirements:
+#    Modules:
+#      cpanm Net::MQTT::Simple
+#      sudo apt install libnet-smtp-perl libnet-smtp-ssl-perl libauthen-sasl-perl
+#      or:
+#      sudo cpanm Net::MQTT::Simple Net::SMTP::SSL Authen::SASL
+#
+#  Config:
+#    Telegram and email parameters must be set in: /spider/local/DXVars.pm
+#
+#  Notes:
+#    Changes in this module require restarting the node.
+#    Based on original development by Dirk Koopman G1TLH.
+#
+#  Author  : Kin EA3CV (ea3cv@cronux.net)
+#  Version : 20250413 v7.4
 #
 
 package Local;
