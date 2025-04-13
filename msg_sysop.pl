@@ -140,7 +140,7 @@ if ($use_telegram) {
 *Call:* $call
 *Subject:* $subject
 *Email:* $email
-*Sent by:* $real_call ($ip)
+*Sent by:* $real_call
 *IP:* $ip
 $message
 TELEGRAM
