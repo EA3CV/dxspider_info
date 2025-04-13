@@ -21,7 +21,7 @@
 #    $use_email    = 1;      # Enable/disable email notification to user
 #    $use_telegram = 1;      # Enable/disable Telegram message to sysop
 #
-#  auth_register.pl — Authorize a pending registration in DXSpider
+#  Author  : Kin EA3CV (ea3cv@cronux.net)
 #  Version : 20250412 v0.4
 #
 
