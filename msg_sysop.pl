@@ -10,6 +10,8 @@
 #    msg_sysop <CALL> <SUBJECT> <EMAIL> <MESSAGE>
 #    Example:
 #      msg_sysop XX0ABC REGISTER xx0abc@example.com Requesting access
+#      msg_sysop XX0XYZ HELP xx0xyz@example.com The sh/dx command fails
+#      msg_sysop XX0XYZ RBN xx0xyz@example.com RBN filter is not activated
 #
 #  Installation:
 #    Save as: /spider/local_cmd/msg_sysop.pl
@@ -23,7 +25,7 @@
 #    $use_email    = 1;    # Enable user email confirmation
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250413 v0.6
+#  Version : 20250413 v0.7
 #
 
 use strict;
