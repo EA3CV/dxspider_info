@@ -23,7 +23,7 @@
 #    $use_email    = 1;    # Enable user email confirmation
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250412 v0.5
+#  Version : 20250413 v0.6
 #
 
 use strict;
@@ -124,21 +124,22 @@ if ($subject =~ /\b(register|registro)\b/i) {
 
     if ($use_email) {
         eval {
-            Local::send_email($email, "Recibido mensaje para el sysop de $main::mycall", $confirm_body);
+            Local::send_email($email, "Msg del sysop de / Msg from sysop of $main::mycall", $confirm_body);
         };
     }
 }
 
 # Telegram to sysop
 if ($use_telegram) {
+    my $sent_date = strftime("%d %B %Y %H:%M:%S", localtime);
     my $payload = <<"TELEGRAM";
 📡 *Message from DXSpider command:*
+*Date:* $sent_date
 *Call:* $call
 *Subject:* $subject
 *Email:* $email
 *Sent by:* $real_call ($ip)
 *IP:* $ip
-
 $message
 TELEGRAM
 
@@ -153,6 +154,7 @@ if ($use_email) {
     my $sysop_body = <<"SYSMSG";
 New message via msg_sysop command:
 
+Node: $main::mycall
 Call: $call
 Subject: $subject
 Email: $email
@@ -162,7 +164,7 @@ Message: $message
 SYSMSG
 
     eval {
-        Local::send_email($main::email_from, "Message received from $call ($subject)", $sysop_body);
+        Local::send_email($main::email_from, "Msg received from $call ($subject) to $main::mycall", $sysop_body);
     };
 }
 
