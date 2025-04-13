@@ -3,7 +3,8 @@
 #
 # Copyright (c) 1998 - Dirk Koopman G1TLH
 #
-#
+# Modify by Kin EA3CV
+# 20250413 v0.0
 #
 
 package DXCron;
