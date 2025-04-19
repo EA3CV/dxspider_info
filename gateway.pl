@@ -53,7 +53,7 @@
 #    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250418 v0.5
+#  Version : 20250418 v0.6
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
@@ -76,8 +76,8 @@ my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall    = 'NODO-9';
-my $password  = 'xxxxxxxx';
+my $mycall    = 'NODE-9';
+my $password  = 'xxxxxxx';
 my $version   = 'lightnode:0.1';
 my $ipv4      = get_public_ip();  # Get the public IP
 
@@ -125,7 +125,7 @@ while (1) {
     }
 }
 
-# Define the tx_pc92 subroutine before it's called
+# Define the tx_pc92 subroutine before it is called
 sub tx_pc92 {
     my ($type, $call, $ip, $sock) = @_;
     my $now = time;
