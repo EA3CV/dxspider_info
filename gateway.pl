@@ -53,7 +53,7 @@
 #    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250418 v0.4
+#  Version : 20250418 v0.5
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
@@ -67,42 +67,35 @@ use Time::HiRes qw(time sleep);
 use POSIX qw(strftime);
 use JSON;
 use Net::MQTT::Simple;
-use Fcntl qw(:flock :DEFAULT);
-use LWP::Simple;
+use Fcntl qw(O_RDONLY O_NONBLOCK :flock);
+use IPC::Shareable;
+use LWP::UserAgent;
 
 # General Configuration
 my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall    = 'NODE-9';
+my $mycall    = 'NODO-9';
 my $password  = 'xxxxxxxx';
 my $version   = 'lightnode:0.1';
+my $ipv4      = get_public_ip();  # Get the public IP
 
-# Try to get public IP (IPv4)
-my $ipv4 = get("http://api.ipify.org");
-
-# If the public IP cannot be obtained, assign a default value
-if (!$ipv4) {
-    $ipv4 = "192.168.100.1";
-    print "Unable to obtain public IP, assigning default IP: $ipv4\n";
-} else {
-    print "Your public IP is: $ipv4\n";
-}
-
-my $mode = 'mqtt';  # Options: 'mqtt', 'fifo'
-my $fifo_path = "/tmp/web_conn_fifo";
-my $timeout = 300;
-my $interval_pc92c = 3600;
+my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
+my $fifo_path  = "/tmp/web_conn_fifo";
+my $timeout    = 300;
+my $interval_pc92c = 3600;  # Interval to send PC92C
 
 # Global Variables
-my (%conectados, %counter_uses, $last_day, $last_pc92c);
+my (%counter_uses, $last_day, $last_pc92c);
+
+# Create a shared memory space for %conectados
+my %conectados;
+tie %conectados, 'IPC::Shareable', '/tmp/conectados_shm', { create => 1, mode => 0666 };
+
 %counter_uses = ( A => {}, D => {}, C => {} );
 $last_day     = (gmtime())[3];
 $last_pc92c   = time();
-
-# At the start, load the state of connected from memory
-load_conectados();
 
 # Main Loop
 while (1) {
@@ -130,6 +123,30 @@ while (1) {
         close $sock if $sock;
         sleep 5;
     }
+}
+
+# Define the tx_pc92 subroutine before it's called
+sub tx_pc92 {
+    my ($type, $call, $ip, $sock) = @_;
+    my $now = time;
+    my $day = (gmtime($now))[3];
+
+    if ($day != $last_day) {
+        %counter_uses = ( A => {}, D => {}, C => {} );
+        $last_day = $day;
+    }
+
+    my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
+    $counter_uses{$type}{$base_counter}++;
+    my $suffix = sprintf(".%02d", $counter_uses{$type}{$base_counter});
+    my $counter = $base_counter . $suffix;
+
+    my $pc = $type eq 'A'
+        ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^"
+        : "PC92^$mycall^$counter^D^^1$call^H99^";
+
+    print $sock "$pc\n";
+    log_msg('TX', $pc);
 }
 
 sub connect_node {
@@ -165,9 +182,10 @@ sub handle_node {
     while (1) {
         my $now = time();
 
+        # Send PC92C when the time is right (based on the interval)
         if ($now - $last_pc92c >= $interval_pc92c && keys %conectados) {
-            send_pc92c($sock);
-            $last_pc92c = $now;
+            send_pc92c($sock);  # Call the function to send PC92C
+            $last_pc92c = $now;  # Update the last PC92C sent time
         }
 
         if ($select->can_read(0.1)) {
@@ -186,19 +204,16 @@ sub handle_node {
 
                 if ($state eq 'login' && $pc == 18) {
                     $state = 'pc92_handshake';
-                    log_msg('**', "PC18 received, sending PC92 handshake...");
                     send_pc92a_k($sock);
                     next;
                 }
 
                 if ($state eq 'pc92_handshake' && $line =~ /^D\s+\Q$mycall\E\s+PC92\^/ && $line =~ /\^K\^/) {
                     $state = 'active';
-                    log_msg('**', "Handshake completed. State -> ACTIVE");
                 }
 
                 if ($pc == 22) {
                     $pc22_seen = 1;
-                    log_msg('**', "PC22 detected. Future incoming PC92 will be ignored.");
                 }
 
                 if ($pc == 92 && !$remote_node && $line =~ /^PC92\^([^\^]+)\^\d+\^A\^\^/) {
@@ -225,12 +240,11 @@ sub send_pc92a_k {
     my $ts_flt = sprintf("%.2f", $epoch - int($epoch) % 60);
 
     foreach my $line (
-        "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^",  # Use ipv4 instead of ipv6
-        "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^",  # ipv4
+        "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^",
+        "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^",
         "PC20^"
     ) {
         print $sock "$line\n";
-        log_msg('TX', $line);
     }
 }
 
@@ -238,37 +252,32 @@ sub send_pc92c {
     my ($sock) = @_;
     my $now = time;
     my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
+    
+    # Access %conectados safely
+    my $lock_fh = lock_conectados();
+
     $counter_uses{C}{$base_counter}++;
     my $suffix = sprintf(".%02d", $counter_uses{C}{$base_counter});
     my $counter = $base_counter . $suffix;
     my $payload = join('^', map { "1$_:$conectados{$_}{ip}" } keys %conectados);
-    my $pc92c = "PC92^$mycall^$counter^C^5$mycall^$payload^^H99^";
+    my $pc92c = "PC92^$mycall^$counter^C^5$mycall^$payload^H99^";  # Fixed: H99^ at the end
 
     print $sock "$pc92c\n";
-    log_msg('TX', $pc92c);
+
+    # Unlock after using %conectados
+    unlock_conectados($lock_fh);
 }
 
-sub tx_pc92 {
-    my ($type, $call, $ip, $sock) = @_;
-    my $now = time;
-    my $day = (gmtime($now))[3];
+sub lock_conectados {
+    open my $fh, '>', '/tmp/conectados_lock' or die "Could not open lock file: $!";
+    flock($fh, LOCK_EX) or die "Could not lock file: $!";
+    return $fh;
+}
 
-    if ($day != $last_day) {
-        %counter_uses = ( A => {}, D => {}, C => {} );
-        $last_day = $day;
-    }
-
-    my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
-    $counter_uses{$type}{$base_counter}++;
-    my $suffix = sprintf(".%02d", $counter_uses{$type}{$base_counter});
-    my $counter = $base_counter . $suffix;
-
-    my $pc = $type eq 'A'
-        ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^"
-        : "PC92^$mycall^$counter^D^^1$call^H99^";
-
-    print $sock "$pc\n";
-    log_msg('TX', $pc);
+sub unlock_conectados {
+    my $fh = shift;
+    flock($fh, LOCK_UN) or die "Could not unlock file: $!";
+    close $fh;
 }
 
 sub run_mqtt_loop {
@@ -300,9 +309,6 @@ sub run_mqtt_loop {
                         tx_pc92('A', $full_call, $ip, $sock);
                     }
                 }
-
-                # Save the state after modifying %conectados in memory
-                save_conectados();
             });
 
             while (1) {
@@ -372,16 +378,10 @@ sub run_fifo_loop {
                         tx_pc92('A', $call, $ip, $sock);
                     }
 
-                    # Save the state after modifying %conectados in memory
-                    save_conectados();
-
                 } elsif ($line =~ /^DESC,(\S+)/) {
                     my $call = uc($1);
                     tx_pc92('D', $call, '', $sock);
                     delete $conectados{$call};
-
-                    # Save the state after modifying %conectados in memory
-                    save_conectados();
                 }
             }
         }
@@ -397,16 +397,13 @@ sub log_msg {
     print "[$now][$type] $msg\n";
 }
 
-sub save_conectados {
-    # Save the state of %conectados in memory with Storable
-    nstore(\%conectados, '/tmp/conectados.dat');
-    log_msg('**', "State of %conectados saved in memory");
-}
-
-sub load_conectados {
-    # Load the state of %conectados from memory
-    if (-e '/tmp/conectados.dat') {
-        %conectados = %{ retrieve('/tmp/conectados.dat') };
-        log_msg('**', "State of %conectados loaded from memory");
+# Function to get the public IP
+sub get_public_ip {
+    my $ua = LWP::UserAgent->new;
+    my $response = $ua->get('http://api.ipify.org');
+    if ($response->is_success) {
+        return $response->decoded_content;
+    } else {
+        return '192.168.255.255';  # Assign static IP in case of failure
     }
 }
