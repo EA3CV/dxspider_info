@@ -58,6 +58,7 @@
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
 
+#!/usr/bin/perl
 use strict;
 use warnings;
 use IO::Socket::INET;
@@ -66,28 +67,42 @@ use Time::HiRes qw(time sleep);
 use POSIX qw(strftime);
 use JSON;
 use Net::MQTT::Simple;
-use Fcntl qw(O_RDONLY O_NONBLOCK);
+use Fcntl qw(:flock :DEFAULT);
+use LWP::Simple;
 
 # General Configuration
 my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall    = 'EA4URE-9';
-my $password  = 'xxxxxxx';
+my $mycall    = 'NODE-9';
+my $password  = 'xxxxxxxx';
 my $version   = 'lightnode:0.1';
-my $ipv6      = 'xxxxxxxx';
 
-my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
-my $fifo_path  = "/tmp/web_conn_fifo";
-my $timeout    = 300;
-my $interval_pc92c = 450;
+# Try to get public IP (IPv4)
+my $ipv4 = get("http://api.ipify.org");
+
+# If the public IP cannot be obtained, assign a default value
+if (!$ipv4) {
+    $ipv4 = "192.168.100.1";
+    print "Unable to obtain public IP, assigning default IP: $ipv4\n";
+} else {
+    print "Your public IP is: $ipv4\n";
+}
+
+my $mode = 'mqtt';  # Options: 'mqtt', 'fifo'
+my $fifo_path = "/tmp/web_conn_fifo";
+my $timeout = 300;
+my $interval_pc92c = 3600;
 
 # Global Variables
 my (%conectados, %counter_uses, $last_day, $last_pc92c);
 %counter_uses = ( A => {}, D => {}, C => {} );
 $last_day     = (gmtime())[3];
 $last_pc92c   = time();
+
+# At the start, load the state of connected from memory
+load_conectados();
 
 # Main Loop
 while (1) {
@@ -210,8 +225,8 @@ sub send_pc92a_k {
     my $ts_flt = sprintf("%.2f", $epoch - int($epoch) % 60);
 
     foreach my $line (
-        "PC92^$mycall^$ts_int^A^^5$mycall:$ipv6^H99^",
-        "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv6^$version^H99^",
+        "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^",  # Use ipv4 instead of ipv6
+        "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^",  # ipv4
         "PC20^"
     ) {
         print $sock "$line\n";
@@ -285,6 +300,9 @@ sub run_mqtt_loop {
                         tx_pc92('A', $full_call, $ip, $sock);
                     }
                 }
+
+                # Save the state after modifying %conectados in memory
+                save_conectados();
             });
 
             while (1) {
@@ -354,10 +372,16 @@ sub run_fifo_loop {
                         tx_pc92('A', $call, $ip, $sock);
                     }
 
+                    # Save the state after modifying %conectados in memory
+                    save_conectados();
+
                 } elsif ($line =~ /^DESC,(\S+)/) {
                     my $call = uc($1);
                     tx_pc92('D', $call, '', $sock);
                     delete $conectados{$call};
+
+                    # Save the state after modifying %conectados in memory
+                    save_conectados();
                 }
             }
         }
@@ -371,4 +395,18 @@ sub log_msg {
     my ($type, $msg) = @_;
     my $now = strftime("%H:%M:%S", localtime);
     print "[$now][$type] $msg\n";
+}
+
+sub save_conectados {
+    # Save the state of %conectados in memory with Storable
+    nstore(\%conectados, '/tmp/conectados.dat');
+    log_msg('**', "State of %conectados saved in memory");
+}
+
+sub load_conectados {
+    # Load the state of %conectados from memory
+    if (-e '/tmp/conectados.dat') {
+        %conectados = %{ retrieve('/tmp/conectados.dat') };
+        log_msg('**', "State of %conectados loaded from memory");
+    }
 }
