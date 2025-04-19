@@ -1,40 +1,42 @@
 #!/usr/bin/perl
 
 #
-#  gateway.pl — Send Web Frontend User Connections to a DXSpider Node (PC92)
+#  gateway.pl — Lightweight DXSpider node to inject PC92 messages from MQTT
 #
 #  Description:
-#    Connects to one or more DXSpider nodes and performs the PC92 protocol
-#    handshake to act as a lightweight node. Optionally listens to MQTT
-#    heartbeats from a Web Frontend and sends PC92A (connect), PC92D
-#    (disconnect), and periodic PC92C (summary) messages to the node.
+#    This script acts as a minimal DXSpider node. It connects to one or more
+#    full DXSpider nodes and sends PC92 messages (A/D/C) based on real-time
+#    MQTT events received from a web frontend or other data source.
 #
-#  Purpose:
-#    This script bridges frontend user activity to the DXSpider network,
-#    ensuring real-time tracking of user connections and disconnections.
+#    It manages login, handshake, connection monitoring and message formatting
+#    according to DXSpider's PC protocol. Designed for lightweight integration.
 #
 #  Usage:
-#    ./gateway.pl
+#    Run the script as a background process or service. Multiple DXSpider
+#    destination nodes can be configured and used in parallel.
 #
 #  Installation:
 #    Save as: /spider/perl/gateway.pl
-#    It is recommended to install this script as a service (e.g. systemd)
-#    to enable automatic startup on system boot.
+#    Recommended to create a systemd service or init script for auto-start.
+#
+#    This script acts as a node. You must configure it on the main DXSpider node with:
+#      set/spider <node>
+#      set/register <node>
+#      set/password <node> <password>
 #
 #  Requirements:
-#    - Perl modules: IO::Socket::INET, Net::MQTT::Simple, JSON, Time::HiRes, POSIX
-#    - An MQTT broker (if $use_mqtt is enabled)
+#    - Perl modules: IO::Socket::INET, Time::HiRes, POSIX, JSON, Net::MQTT::Simple
+#    - MQTT broker reachable at configured IP and topic structure
 #
 #  Config:
-#    @nodes          = List of DXSpider nodes to connect to (host, port)
-#    $use_mqtt       = Enable or disable MQTT listener (1 or 0)
-#    $timeout        = Seconds of inactivity before sending PC92^D
-#    $interval_pc92c = Interval to send PC92^C summary (in seconds)
+#    $use_mqtt         = 1;           # Enable MQTT integration
+#    $timeout          = 300;         # Disconnection timeout for users (in seconds)
+#    $interval_pc92c   = 1800;        # Interval to send PC92^C summary (in seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
 #  Version : 20250418 v1.0
 #
-#  License : This script is licensed under the GNU General Public License v3.0
+#  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
 
 use strict;
