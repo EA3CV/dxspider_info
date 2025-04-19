@@ -1,40 +1,59 @@
 #!/usr/bin/perl
 
 #
-#  gateway.pl — Lightweight DXSpider node to inject PC92 messages from MQTT
+#  gateway.pl — Lightweight DXSpider node to inject PC92 messages from MQTT or FIFO
 #
 #  Description:
 #    This script acts as a minimal DXSpider node. It connects to one or more
 #    full DXSpider nodes and sends PC92 messages (A/D/C) based on real-time
-#    MQTT events received from a web frontend or other data source.
+#    events received via MQTT or a named FIFO pipe.
 #
-#    It manages login, handshake, connection monitoring and message formatting
-#    according to DXSpider's PC protocol. Designed for lightweight integration.
+#    It handles login, handshake, periodic PC92C summary reports, connection
+#    timeouts, and protocol message formatting. Only one input mode should be used.
+#
+#    PC92A is sent once when a user connects, PC92D after inactivity,
+#    and PC92C every configured interval summarizing currently connected users.
 #
 #  Usage:
-#    Run the script as a background process or service. Multiple DXSpider
-#    destination nodes can be configured and used in parallel.
+#    Run the script as a background process or systemd service.
+#    Multiple destination DXSpider nodes can be defined and will be used in order.
 #
 #  Installation:
 #    Save as: /spider/perl/gateway.pl
-#    Recommended to create a systemd service or init script for auto-start.
+#    Recommended to install as a systemd service using install_gateway_service.sh
 #
-#    This script acts as a node. You must configure it on the main DXSpider node with:
+#    This script acts as a DXSpider node. Configure it on the main DXSpider node with:
 #      set/spider <node>
 #      set/register <node>
 #      set/password <node> <password>
 #
 #  Requirements:
-#    - Perl modules: IO::Socket::INET, Time::HiRes, POSIX, JSON, Net::MQTT::Simple
-#    - MQTT broker reachable at configured IP and topic structure
+#    - Perl modules: IO::Socket::INET, IO::Select, Time::HiRes, POSIX, JSON,
+#                    Net::MQTT::Simple, Fcntl
+#
+#  Input modes:
+#    Set the input mode:
+#      my $mode = 'mqtt';    # Options: 'mqtt', 'fifo'
+#
+#    MQTT:
+#      Topic: api/heartbeat/socio
+#      Payload (JSON):
+#        { "call": "EA3XYZ", "ip": "1.2.3.4[,ipv6]", "ts": 1713456789, "svc": "1", "ident": 1 }
+#
+#    FIFO:
+#      Path: /tmp/web_conn_fifo
+#      Lines:
+#        CONN,<CALL>,<IP>     triggers PC92A
+#        DESC,<CALL>          triggers PC92D
 #
 #  Config:
-#    $use_mqtt         = 1;           # Enable MQTT integration
-#    $timeout          = 300;         # Disconnection timeout for users (in seconds)
-#    $interval_pc92c   = 1800;        # Interval to send PC92^C summary (in seconds)
+#    $mode            = 'mqtt';            # Select input method: 'mqtt' or 'fifo'
+#    $fifo_path       = "/tmp/web_conn_fifo";
+#    $timeout         = 300;               # Disconnection timeout for users (seconds)
+#    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250418 v1.0
+#  Version : 20250418 v0.4
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
