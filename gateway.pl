@@ -42,30 +42,33 @@
 use strict;
 use warnings;
 use IO::Socket::INET;
+use IO::Select;
 use Time::HiRes qw(time sleep);
 use POSIX qw(strftime);
 use JSON;
 use Net::MQTT::Simple;
+use Fcntl qw(O_RDONLY O_NONBLOCK);
 
 # General Configuration
 my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall   = 'EA4URE-9';
-my $password = 'notelodire';
-my $version  = 'lightnode:0.1';
-my $ipv6     = '2a01:4f8:1c1b::1';
+my $mycall    = 'EA4URE-9';
+my $password  = 'xxxxxxx';
+my $version   = 'lightnode:0.1';
+my $ipv6      = 'xxxxxxxx';
 
-my $use_mqtt = 1;
-my $timeout  = 300;
-my $interval_pc92c = 1800;
+my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
+my $fifo_path  = "/tmp/web_conn_fifo";
+my $timeout    = 300;
+my $interval_pc92c = 450;
 
 # Global Variables
 my (%conectados, %counter_uses, $last_day, $last_pc92c);
 %counter_uses = ( A => {}, D => {}, C => {} );
-$last_day = (gmtime())[3];
-$last_pc92c = time();
+$last_day     = (gmtime())[3];
+$last_pc92c   = time();
 
 # Main Loop
 while (1) {
@@ -73,9 +76,14 @@ while (1) {
         my $sock = connect_node($node->{host}, $node->{port});
         next unless $sock;
 
-        if ($use_mqtt) {
+        if ($mode eq 'mqtt') {
             if (fork() == 0) {
                 run_mqtt_loop($sock);
+                exit 0;
+            }
+        } elsif ($mode eq 'fifo') {
+            if (fork() == 0) {
+                run_fifo_loop($sock);
                 exit 0;
             }
         }
@@ -117,55 +125,62 @@ sub connect_node {
 
 sub handle_node {
     my ($sock) = @_;
+    my $select = IO::Select->new($sock);
     my ($state, $pc22_seen, $remote_node) = ('login', 0, '');
 
-    while (my $line = <$sock>) {
-        chomp $line;
-        my $now = time;
-
-        if ($line =~ /PC(18|92|20|22|51|11|61)\^/) {
-            my $pc = $1;
-
-            if ($pc == 92 && $pc22_seen) {
-                next;
-            }
-
-            log_msg('RX', $line);
-
-            if ($state eq 'login' && $pc == 18) {
-                $state = 'pc92_handshake';
-                log_msg('**', "PC18 received, sending PC92 handshake...");
-                send_pc92a_k($sock);
-                next;
-            }
-
-            if ($state eq 'pc92_handshake' && $line =~ /^D\s+\Q$mycall\E\s+PC92\^/ && $line =~ /\^K\^/) {
-                $state = 'active';
-                log_msg('**', "Handshake completed. State -> ACTIVE");
-            }
-
-            if ($pc == 22) {
-                $pc22_seen = 1;
-                log_msg('**', "PC22 detected. Future incoming PC92 will be ignored.");
-            }
-
-            if ($pc == 92 && !$remote_node && $line =~ /^PC92\^([^\^]+)\^\d+\^A\^\^/) {
-                $remote_node = $1;
-            }
-
-            if ($pc == 51 && $line =~ /^PC51\^$mycall\^([^\^]+)\^1\^/) {
-                my $dest = $1;
-                my $reply = "PC51^$dest^$mycall^0^";
-                print $sock "$reply\n";
-                log_msg('TX', $reply);
-            }
-        }
+    while (1) {
+        my $now = time();
 
         if ($now - $last_pc92c >= $interval_pc92c && keys %conectados) {
             send_pc92c($sock);
             $last_pc92c = $now;
         }
+
+        if ($select->can_read(0.1)) {
+            my $line = <$sock>;
+            last unless defined $line;
+            chomp $line;
+
+            if ($line =~ /PC(18|92|20|22|51|11|61)\^/) {
+                my $pc = $1;
+
+                if ($pc == 92 && $pc22_seen) {
+                    next;
+                }
+
+                log_msg('RX', $line);
+
+                if ($state eq 'login' && $pc == 18) {
+                    $state = 'pc92_handshake';
+                    log_msg('**', "PC18 received, sending PC92 handshake...");
+                    send_pc92a_k($sock);
+                    next;
+                }
+
+                if ($state eq 'pc92_handshake' && $line =~ /^D\s+\Q$mycall\E\s+PC92\^/ && $line =~ /\^K\^/) {
+                    $state = 'active';
+                    log_msg('**', "Handshake completed. State -> ACTIVE");
+                }
+
+                if ($pc == 22) {
+                    $pc22_seen = 1;
+                    log_msg('**', "PC22 detected. Future incoming PC92 will be ignored.");
+                }
+
+                if ($pc == 92 && !$remote_node && $line =~ /^PC92\^([^\^]+)\^\d+\^A\^\^/) {
+                    $remote_node = $1;
+                }
+
+                if ($pc == 51 && $line =~ /^PC51\^$mycall\^([^\^]+)\^1\^/) {
+                    my $dest = $1;
+                    my $reply = "PC51^$dest^$mycall^0^";
+                    print $sock "$reply\n";
+                    log_msg('TX', $reply);
+                }
+            }
+        }
     }
+
     die "Connection lost";
 }
 
@@ -214,7 +229,10 @@ sub tx_pc92 {
     my $suffix = sprintf(".%02d", $counter_uses{$type}{$base_counter});
     my $counter = $base_counter . $suffix;
 
-    my $pc = $type eq 'A' ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^" : "PC92^$mycall^$counter^D^^1$call^H99^";
+    my $pc = $type eq 'A'
+        ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^"
+        : "PC92^$mycall^$counter^D^^1$call^H99^";
+
     print $sock "$pc\n";
     log_msg('TX', $pc);
 }
@@ -239,13 +257,14 @@ sub run_mqtt_loop {
                     my $ip = $ips[$i];
                     my $full_call = $i == 0 ? $call : "$call-" . (19 + $i);
 
-                    unless (exists $conectados{$full_call}) {
-                        tx_pc92('A', $full_call, $ip, $sock);
-                        $conectados{$full_call}{start} = $now;
-                    }
-
+                    my $already = exists $conectados{$full_call};
                     $conectados{$full_call}{ip}   = $ip;
                     $conectados{$full_call}{last} = $now;
+
+                    unless ($already) {
+                        $conectados{$full_call}{start} = $now;
+                        tx_pc92('A', $full_call, $ip, $sock);
+                    }
                 }
             });
 
@@ -264,6 +283,68 @@ sub run_mqtt_loop {
 
         log_msg('**', "MQTT error: $@. Retrying in 10s...");
         sleep 10;
+    }
+}
+
+sub run_fifo_loop {
+    my ($sock) = @_;
+
+    while (1) {
+        unless (-p $fifo_path) {
+            unlink $fifo_path;
+            system("mkfifo", $fifo_path);
+            log_msg('**', "FIFO $fifo_path created");
+        }
+
+        sysopen(my $fh, $fifo_path, O_RDONLY | O_NONBLOCK) or do {
+            log_msg('**', "Failed to open FIFO $fifo_path: $!");
+            sleep 5;
+            next;
+        };
+
+        log_msg('**', "FIFO $fifo_path opened for reading");
+        my $selector = IO::Select->new($fh);
+
+        while (1) {
+            unless (-p $fifo_path) {
+                log_msg('**', "FIFO $fifo_path was removed, restarting...");
+                last;
+            }
+
+            if ($selector->can_read(0.1)) {
+                my $line = <$fh>;
+
+                unless (defined $line) {
+                    log_msg('**', "FIFO closed (writer end disappeared), reopening...");
+                    last;
+                }
+
+                chomp $line;
+                next if $line =~ /^\s*\$/;
+
+                if ($line =~ /^CONN,(\S+),(\S+)/) {
+                    my ($call, $ip) = (uc($1), $2);
+                    my $now = time;
+
+                    my $already = exists $conectados{$call};
+                    $conectados{$call}{ip}   = $ip;
+                    $conectados{$call}{last} = $now;
+
+                    unless ($already) {
+                        $conectados{$call}{start} = $now;
+                        tx_pc92('A', $call, $ip, $sock);
+                    }
+
+                } elsif ($line =~ /^DESC,(\S+)/) {
+                    my $call = uc($1);
+                    tx_pc92('D', $call, '', $sock);
+                    delete $conectados{$call};
+                }
+            }
+        }
+
+        close $fh;
+        sleep 1;
     }
 }
 
