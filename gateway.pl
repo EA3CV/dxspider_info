@@ -78,8 +78,8 @@ my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall    = 'EA4URE-9';
-my $password  = 'notelodire';
+my $mycall    = 'NODE-9';
+my $password  = 'xxxxxx';
 my $version   = 'kin_node:0.1';
 my $ipv4      = get_public_ip();  # Get the public IP
 
