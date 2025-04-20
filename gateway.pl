@@ -53,10 +53,13 @@
 #    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250420 v0.7
+#  Version : 20250420 v0.8
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
+
+
+#!/usr/bin/perl
 
 use strict;
 use warnings;
@@ -83,22 +86,24 @@ my $ipv4      = get_public_ip();  # Get the public IP
 my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
 my $fifo_path  = "/tmp/web_conn_fifo";
 my $timeout    = 300;
+my $interval_pc92c = 7200;
+my $interval_pc92k = 3600;
 
 # Global Variables
-my (%counter_uses, $last_day, $last_pc92c);
+my (%counter_uses, $last_day, $last_pc92c, $last_pc92k);
 
 my $pc22_seen;
 tie $pc22_seen, 'IPC::Shareable', 'pc22_flag', { create => 1, mode => 0666 };
 $pc22_seen = 0;
 
-# Create a shared memory space for %conectados
 my %conectados;
 tie %conectados, 'IPC::Shareable', '/tmp/conectados_shm', { create => 1, mode => 0666 };
-%conectados = ();  # Esto lo vacía al iniciar
+%conectados = ();
 
-%counter_uses = ( A => {}, D => {}, C => {} );
+%counter_uses = ();
 $last_day     = (gmtime())[3];
 $last_pc92c   = time();
+$last_pc92k   = time();
 
 # Main Loop
 while (1) {
@@ -128,26 +133,26 @@ while (1) {
     }
 }
 
-# Define the tx_pc92 subroutine before it is called
-sub tx_pc92 {
-    my ($type, $call, $ip, $sock) = @_;
-    unless ($type eq 'C' || $pc22_seen) {
-        return;
-    }
-
+sub generate_counter {
     my $now = time;
     my $day = (gmtime($now))[3];
 
     if ($day != $last_day) {
-        %counter_uses = ( A => {}, D => {}, C => {} );
+        %counter_uses = ();
         $last_day = $day;
     }
 
     my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
-    $counter_uses{$type}{$base_counter}++;
-    my $suffix = sprintf(".%02d", $counter_uses{$type}{$base_counter});
-    my $counter = $base_counter . $suffix;
+    $counter_uses{$base_counter}++;
+    my $suffix = sprintf(".%02d", $counter_uses{$base_counter});
+    return $base_counter . $suffix;
+}
 
+sub tx_pc92 {
+    my ($type, $call, $ip, $sock) = @_;
+    return unless ($type eq 'C' || $pc22_seen);
+
+    my $counter = generate_counter();
     my $pc = $type eq 'A'
         ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^"
         : "PC92^$mycall^$counter^D^^1$call^H99^";
@@ -184,15 +189,19 @@ sub connect_node {
 sub handle_node {
     my ($sock) = @_;
     my $select = IO::Select->new($sock);
-    my ($state, $pc22_seen, $remote_node) = ('login', 0, '');
+    my ($state, $remote_node) = ('login', '');
 
     while (1) {
         my $now = time();
 
-        # Send PC92C when the time is right (based on the interval)
         if ($now - $last_pc92c >= $interval_pc92c && keys %conectados) {
-            send_pc92c($sock);  # Call the function to send PC92C
-            $last_pc92c = $now;  # Update the last PC92C sent time
+            send_pc92c($sock);
+            $last_pc92c = $now;
+        }
+
+        if ($now - $last_pc92k >= $interval_pc92k) {
+            send_pc92k($sock);
+            $last_pc92k = $now;
         }
 
         if ($select->can_read(0.1)) {
@@ -202,10 +211,6 @@ sub handle_node {
 
             if ($line =~ /PC(18|92|20|22|51|11|61)\^/) {
                 my $pc = $1;
-
-                if ($pc == 92 && $pc22_seen) {
-                    next;
-                }
 
                 log_msg('RX', $line);
 
@@ -245,39 +250,36 @@ sub send_pc92a_k {
     my $epoch = time();
 
     my ($sec, $min, $hour) = (gmtime($epoch))[0..2];
-
     my $base_counter = $hour * 3600 + $min * 60 + $sec;
     my $ts_int = $base_counter - ($base_counter % 60);
     my $ts_flt = sprintf("%.2f", $base_counter);
 
-    print $sock "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^\n";
-    log_msg('TX', 'Enviado PC92 A');
-    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^\n";
-    log_msg('TX', 'Enviado PC92 K');
-    print $sock "PC20^\n";
-    log_msg('TX', 'Enviado PC20');
+    print $sock "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^\n"; log_msg('TX', 'Enviado PC92 A');
+    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^\n"; log_msg('TX', 'Enviado PC92 K');
+    print $sock "PC20^\n"; log_msg('TX', 'Enviado PC20');
 
     $pc22_seen = 1;
 }
 
 sub send_pc92c {
     my ($sock) = @_;
-    my $now = time;
-    my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
+    my $counter = generate_counter();
 
-    # Access %conectados safely
     my $lock_fh = lock_conectados();
-
-    $counter_uses{C}{$base_counter}++;
-    my $suffix = sprintf(".%02d", $counter_uses{C}{$base_counter});
-    my $counter = $base_counter . $suffix;
     my $payload = join('^', map { "1$_:$conectados{$_}{ip}" } keys %conectados);
-    my $pc92c = "PC92^$mycall^$counter^C^5$mycall^$payload^H99^";  # Fixed: H99^ at the end
+    my $pc92c = "PC92^$mycall^$counter^C^5$mycall^$payload^H99^";
 
     print $sock "$pc92c\n";
-
-    # Unlock after using %conectados
     unlock_conectados($lock_fh);
+    log_msg('TX', "Enviado PC92C: $pc92c");
+}
+
+sub send_pc92k {
+    my ($sock) = @_;
+    my $counter = generate_counter();
+    my $line = "PC92^$mycall^$counter^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^";
+    print $sock "$line\n";
+    log_msg('TX', "Enviado PC92K: $line");
 }
 
 sub lock_conectados {
@@ -375,7 +377,7 @@ sub run_fifo_loop {
                 }
 
                 chomp $line;
-                next if $line =~ /^\s*\$/;
+                next if $line =~ /^\s*$/;
 
                 if ($line =~ /^CONN,(\S+),(\S+)/) {
                     my ($call, $ip) = (uc($1), $2);
@@ -409,13 +411,8 @@ sub log_msg {
     print "[$now][$type] $msg\n";
 }
 
-# Function to get the public IP
 sub get_public_ip {
     my $ua = LWP::UserAgent->new;
     my $response = $ua->get('http://api.ipify.org');
-    if ($response->is_success) {
-        return $response->decoded_content;
-    } else {
-        return '192.168.255.255';  # Assign static IP in case of failure
-    }
+    return $response->is_success ? $response->decoded_content : '192.168.255.255';
 }
