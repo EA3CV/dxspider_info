@@ -53,13 +53,10 @@
 #    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250420 v0.8
+#  Version : 20250420 v0.9
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
-
-
-#!/usr/bin/perl
 
 use strict;
 use warnings;
@@ -79,7 +76,7 @@ my @nodes = (
     { host => '127.0.0.1', port => 7305 },
 );
 my $mycall    = 'NODE-9';
-my $password  = 'xxxxxx';
+my $password  = 'xxxxxxx';
 my $version   = 'kin_node:0.1';
 my $ipv4      = get_public_ip();  # Get the public IP
 
@@ -212,6 +209,11 @@ sub handle_node {
             if ($line =~ /PC(18|92|20|22|51|11|61)\^/) {
                 my $pc = $1;
 
+                # Ignorar PC92, PC11 y PC61 después de recibir PC22
+                if (($pc == 92 || $pc == 11 || $pc == 61) && $pc22_seen) {
+                    next;
+                }
+
                 log_msg('RX', $line);
 
                 if ($state eq 'login' && $pc == 18) {
@@ -255,7 +257,7 @@ sub send_pc92a_k {
     my $ts_flt = sprintf("%.2f", $base_counter);
 
     print $sock "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^\n"; log_msg('TX', 'Enviado PC92 A');
-    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^\n"; log_msg('TX', 'Enviado PC92 K');
+    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:9000:1^0^0^$ipv4^$version^H99^\n"; log_msg('TX', 'Enviado PC92 K');
     print $sock "PC20^\n"; log_msg('TX', 'Enviado PC20');
 
     $pc22_seen = 1;
