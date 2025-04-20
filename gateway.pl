@@ -53,12 +53,11 @@
 #    $interval_pc92c  = 450;               # Interval to send PC92^C summary (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250418 v0.6
+#  Version : 20250420 v0.7
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
 
-#!/usr/bin/perl
 use strict;
 use warnings;
 use IO::Socket::INET;
@@ -76,22 +75,26 @@ my @nodes = (
     { host => '127.0.0.1', port => 7303 },
     { host => '127.0.0.1', port => 7305 },
 );
-my $mycall    = 'NODE-9';
-my $password  = 'xxxxxxx';
-my $version   = 'lightnode:0.1';
+my $mycall    = 'EA4URE-9';
+my $password  = 'notelodire';
+my $version   = 'kin_node:0.1';
 my $ipv4      = get_public_ip();  # Get the public IP
 
 my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
 my $fifo_path  = "/tmp/web_conn_fifo";
 my $timeout    = 300;
-my $interval_pc92c = 3600;  # Interval to send PC92C
 
 # Global Variables
 my (%counter_uses, $last_day, $last_pc92c);
 
+my $pc22_seen;
+tie $pc22_seen, 'IPC::Shareable', 'pc22_flag', { create => 1, mode => 0666 };
+$pc22_seen = 0;
+
 # Create a shared memory space for %conectados
 my %conectados;
 tie %conectados, 'IPC::Shareable', '/tmp/conectados_shm', { create => 1, mode => 0666 };
+%conectados = ();  # Esto lo vacía al iniciar
 
 %counter_uses = ( A => {}, D => {}, C => {} );
 $last_day     = (gmtime())[3];
@@ -128,6 +131,10 @@ while (1) {
 # Define the tx_pc92 subroutine before it is called
 sub tx_pc92 {
     my ($type, $call, $ip, $sock) = @_;
+    unless ($type eq 'C' || $pc22_seen) {
+        return;
+    }
+
     my $now = time;
     my $day = (gmtime($now))[3];
 
@@ -236,23 +243,28 @@ sub handle_node {
 sub send_pc92a_k {
     my ($sock) = @_;
     my $epoch = time();
-    my $ts_int = int($epoch - int($epoch) % 60);
-    my $ts_flt = sprintf("%.2f", $epoch - int($epoch) % 60);
 
-    foreach my $line (
-        "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^",
-        "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^",
-        "PC20^"
-    ) {
-        print $sock "$line\n";
-    }
+    my ($sec, $min, $hour) = (gmtime($epoch))[0..2];
+
+    my $base_counter = $hour * 3600 + $min * 60 + $sec;
+    my $ts_int = $base_counter - ($base_counter % 60);
+    my $ts_flt = sprintf("%.2f", $base_counter);
+
+    print $sock "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^\n";
+    log_msg('TX', 'Enviado PC92 A');
+    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^\n";
+    log_msg('TX', 'Enviado PC92 K');
+    print $sock "PC20^\n";
+    log_msg('TX', 'Enviado PC20');
+
+    $pc22_seen = 1;
 }
 
 sub send_pc92c {
     my ($sock) = @_;
     my $now = time;
     my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
-    
+
     # Access %conectados safely
     my $lock_fh = lock_conectados();
 
