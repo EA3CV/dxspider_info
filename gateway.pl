@@ -4,394 +4,431 @@
 #  gateway.pl — Lightweight DXSpider node to inject PC92 messages from MQTT or FIFO
 #
 #  Description:
-#    This script acts as a minimal DXSpider node. It connects to one or more
-#    full DXSpider nodes and sends PC92 messages (A/D/C) based on real-time
-#    events received via MQTT or a named FIFO pipe.
+#    This script acts as a minimal DXSpider node. It connects to a full DXSpider
+#    node via Telnet and sends PC92 messages (A/D/C/K) based on real-time events
+#    received via MQTT or a named FIFO pipe.
 #
-#    It handles login, handshake, periodic PC92C summary reports, connection
-#    timeouts, and protocol message formatting. Only one input mode should be used.
+#    It handles authentication, periodic PC92C, reports, 
+#    connection timeouts, and DXSpider protocol formatting.
+#
+#    After session initialization, the script filters incoming Telnet traffic and
+#    only logs received PC51 messages (RX).
 #
 #    PC92A is sent once when a user connects, PC92D after inactivity,
-#    and PC92C every configured interval summarizing currently connected users.
+#    PC92C is a summary sent periodically, and PC92K is a keepalive/status.
 #
 #  Usage:
 #    Run the script as a background process or systemd service.
-#    Multiple destination DXSpider nodes can be defined and will be used in order.
 #
 #  Installation:
-#    Save as: /spider/perl/gateway.pl
-#    Recommended to install as a systemd service using install_gateway_service.sh
-#
-#    This script acts as a DXSpider node. Configure it on the main DXSpider node with:
+#    Save as: /spider/local_cmd/gateway.pl
+#    Configure your DXSpider node with:
 #      set/spider <node>
 #      set/register <node>
 #      set/password <node> <password>
 #
 #  Requirements:
-#    - Perl modules: IO::Socket::INET, IO::Select, Time::HiRes, POSIX, JSON,
-#                    Net::MQTT::Simple, Fcntl
+#    - Perl modules:
+#        AnyEvent
+#        IO::Socket::INET
+#        IO::Handle
+#        Time::HiRes
+#        LWP::Simple
+#        AnyEvent::Handle
+#        AnyEvent::Socket
+#        AnyEvent::MQTT
+#        JSON
 #
 #  Input modes:
-#    Set the input mode:
-#      my $mode = 'mqtt';    # Options: 'mqtt', 'fifo'
+#    $mode = 'mqtt';   # Options: 'mqtt', 'fifo'
 #
 #    MQTT:
-#      Topic: api/heartbeat/socio
-#      Payload (JSON):
-#        { "call": "EA3XYZ", "ip": "1.2.3.4[,ipv6]", "ts": 1713456789, "svc": "1", "ident": 1 }
+#      Payload JSON format:
+#        { "call": "EA3XYZ", "ip": "1.2.3.4", "ts": 1713456789, "svc": "1", "ident": 1 }
 #
 #    FIFO:
-#      Path: /tmp/web_conn_fifo
-#      Lines:
-#        CONN,<CALL>,<IP>     triggers PC92A
-#        DESC,<CALL>          triggers PC92D
+#      Path: /tmp/kin_fifo
+#      Input:
+#        CONN,<CALL>,<IP>     triggers Add users
+#        DESC,<CALL>          triggers Deleted users
 #
 #  Config:
-#    $mode            = 'mqtt';            # Select input method: 'mqtt' or 'fifo'
-#    $fifo_path       = "./web_conn_fifo";
-#    $timeout         = 300;               # Disconnection timeout for users (seconds)
-#    $interval_pc92c  = 450;               # Interval to send PC92C summary (seconds)
+#    $mode              = 'mqtt';         # Choose between 'mqtt' or 'fifo'
+#    $fifo_path         = '/tmp/kin_fifo'
+#    $timeout_conn      = 300;            # Inactivity timeout in seconds
+#    $pc92c_interval    = 14400;          # Interval for PC92C summary (seconds)
+#    $pc92k_interval    = 3600;           # Interval for PC92K keepalive (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250422 v1.0
+#  Version : 20250424 v1.1
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
 
 use strict;
 use warnings;
+use AnyEvent;
 use IO::Socket::INET;
-use IO::Select;
-use Time::HiRes qw(time sleep);
-use POSIX qw(strftime);
+use IO::Handle;
+use Time::HiRes qw/gettimeofday/;
+use LWP::Simple;
+use AnyEvent::Handle;
+use AnyEvent::Socket;
+use AnyEvent::MQTT;
 use JSON;
-use Net::MQTT::Simple;
-use Fcntl qw(O_RDONLY O_NONBLOCK :flock);
-use LWP::UserAgent;
-use Fcntl ':flock';
-use IPC::Shareable;
 
-# General Configuration
-my @nodes = (
-    { host => '127.0.0.1', port => 7303 },
-    { host => '127.0.0.1', port => 7305 },
-);
-my $mycall    = 'NODE-9';
-my $password  = 'xxxxxxx';
-my $version   = 'kin_node:0.2';
-my $ipv4      = get_public_ip();
-
-my $mode       = 'mqtt';  # Options: 'mqtt', 'fifo'
-# mqtt
-my $mqtt_host  = '192.168.1.121:1883';
+my $host       = 'localhost';
+my $port       = 7303;
+my $username   = 'EA4URE-9';
+my $password   = 'notelodire';
+my $version    = 'kin_node:0.3';
+my $mi_nodo    = $username;
+my $mqtt_host  = '192.168.1.121';
+my $mqtt_port  = 1883;
 my $mqtt_topic = 'api/heartbeat/socio';
-my $buffer_file = "./connected_buffer.json";
-# fifo
-my $fifo_path  = "./web_conn_fifo";
+my $mode       = 'mqtt'; # 'mqtt' or 'fifo'
+my $fifo_path  = '/tmp/kin_fifo';
 
-my $timeout    = 300;
-my $interval_pc92c = 7200;
-my $interval_pc92k = 3600;
+my $pc92k_interval = 3600;   # 1 hour interval
+my $pc92c_interval = 14400;  # 4 hour interval
+my $timeout_conn   = 300;    # Timeout for disconnection due to inactivity
+my $filter_rx_only_specific_pc = 0;
 
-# Global Variables
-my (%counter_uses, $last_day, $last_pc92c, $last_pc92k);
+my $sock;
+my $buffer = '';
+my $state  = 'await_login';
+my $mi_ip  = get_public_ip();
+my $login_timeout_watcher;
+my $remote_node = '';
+my $cv = AnyEvent->condvar;
+my %active_users;
+my ($fifo_watcher, $mqtt, $telnet_watcher, $periodic_pc92_timer);
 
-my $pc22_seen;
-my $pc22_key = 'pc22_seen_key';
-tie $pc22_seen, 'IPC::Shareable', $pc22_key, { create => 1, mode => 0666 };
-$pc22_seen = 0;
+my $last_pc92c_time = 0;
+my $last_pc92k_time = 0;
 
-%counter_uses = ();
-$last_day     = (gmtime())[3];
-$last_pc92c   = time();
-$last_pc92k   = time();
+connect_telnet();
 
-while (1) {
-    foreach my $node (@nodes) {
-        my $sock = connect_node($node->{host}, $node->{port});
-        next unless $sock;
+my $heartbeat = AnyEvent->timer(
+    interval => 5,
+    cb => sub {
+        # print_log('**', "Heartbeat: alive, state = $state");
+    }
+);
 
-        if ($mode eq 'mqtt') {
-            if (fork() == 0) {
-                run_mqtt_loop($sock);
-                exit 0;
+$cv->recv;
+
+sub connect_telnet {
+    $sock = IO::Socket::INET->new(
+        PeerHost => $host,
+        PeerPort => $port,
+        Proto    => 'tcp',
+        Timeout  => 10
+    ) or return print_log('**', "Connection to $host:$port failed");
+
+    $sock->autoflush(1);
+    print_log('**', "Connected to $host:$port");
+    start_login_timeout();
+
+    $telnet_watcher = AnyEvent->io(
+        fh   => $sock,
+        poll => 'r',
+        cb   => sub {
+            # print_log('**', "Telnet watcher activated (callback)");
+
+            my $bytes = sysread($sock, my $chunk, 4096);
+            # print_log('**', "sysread: $bytes bytes read");
+            # print_log('**', "chunk: [$chunk]") if defined $chunk && $chunk ne '';
+
+            if (!$bytes) {
+                print_log('**', "Disconnected");
+                undef $telnet_watcher;
+                reconnect_later();
+                return;
             }
-        } elsif ($mode eq 'fifo') {
-            if (fork() == 0) {
-                run_fifo_loop($sock);
-                exit 0;
+
+            $buffer .= $chunk;
+            $buffer =~ s/\r\n/\n/g;
+            $buffer =~ s/\r/\n/g;
+
+            if ($state eq 'await_login' && index($buffer, 'login:') != -1) {
+                print_log('RX', 'login:');
+                send_telnet($username);
+                $state = 'await_password';
+                $buffer = '';
+                return;
+            }
+            if ($state eq 'await_password' && index($buffer, 'password:') != -1) {
+                print_log('RX', 'password:');
+                send_telnet($password);
+                $state = 'await_pc18';
+                cancel_login_timeout();
+                $buffer = '';
+                return;
+            }
+
+            while ($buffer =~ s/^(.*?\n)//) {
+                my $line = $1;
+                $line =~ s/\n$//;
+                handle_line($line);
             }
         }
-
-        eval {
-            handle_node($sock);
-        };
-
-        log_msg('**', "Disconnected from $node->{host}:$node->{port}, retrying in 5s...");
-        close $sock if $sock;
-        sleep 5;
-    }
+    );
 }
 
-sub load_buffer {
-    open my $fh, "<", $buffer_file or return {};
-    flock($fh, LOCK_SH);
-    my $json = do { local $/; <$fh> };
-    close $fh;
-    return $json ? decode_json($json) : {};
-}
+sub handle_line {
+    my ($line) = @_;
 
-sub save_buffer {
-    my ($data) = @_;
-    open my $fh, ">", $buffer_file or die "Cannot write buffer: $!";
-    flock($fh, LOCK_EX);
-    print $fh encode_json($data);
-    close $fh;
-}
-
-sub update_buffer {
-    my ($call, $ip) = @_;
-    my $now = time;
-    my $data = load_buffer();
-    $data->{$call}{ip}   = $ip;
-    $data->{$call}{last} = $now;
-    $data->{$call}{start} //= $now;
-    save_buffer($data);
-}
-
-sub delete_buffer_entry {
-    my ($call) = @_;
-    my $data = load_buffer();
-    delete $data->{$call};
-    save_buffer($data);
-}
-
-sub get_all_conectados {
-    return load_buffer();
-}
-
-sub generate_counter {
-    my $now = time;
-    my $day = (gmtime($now))[3];
-    if ($day != $last_day) {
-        %counter_uses = ();
-        $last_day = $day;
-    }
-    my $base_counter = (gmtime($now))[2]*3600 + (gmtime($now))[1]*60 + (gmtime($now))[0];
-    $counter_uses{$base_counter}++;
-    my $suffix = sprintf(".%02d", $counter_uses{$base_counter});
-    return $base_counter . $suffix;
-}
-
-sub tx_pc92 {
-    my ($type, $call, $ip, $sock) = @_;
-    return unless ($type eq 'C' || $pc22_seen);
-    my $counter = generate_counter();
-    my $pc = $type eq 'A'
-        ? "PC92^$mycall^$counter^A^^1$call:$ip^H99^"
-        : "PC92^$mycall^$counter^D^^1$call^H99^";
-    print $sock "$pc";
-    log_msg('TX', $pc);
-}
-
-sub connect_node {
-    my ($host, $port) = @_;
-    my $sock = IO::Socket::INET->new(PeerHost => $host, PeerPort => $port, Proto => 'tcp', Timeout => 10);
-    unless ($sock) {
-        log_msg('**', "Could not connect to $host:$port - $!");
+    if ($state eq 'await_pc18' && $line =~ /^PC18/) {
+        print_log('RX', $line);
+        send_pc92a();
+        send_pc92k();
+        send_telnet("PC20");
+        $state = 'await_pc92_pc22';
         return;
     }
-    $sock->autoflush(1);
-    log_msg('**', "Connected to $host:$port");
-    print $sock "$mycall\n";
-    sleep 1;
-    print $sock "$password\n" if $password;
-    log_msg('**', "Login sent as $mycall");
-    return $sock;
-}
 
-sub handle_node {
-    my ($sock) = @_;
-    my $select = IO::Select->new($sock);
-    my ($state, $remote_node) = ('login', '');
-    while (1) {
-        if ($select->can_read(0.5)) {
-            my $line = <$sock>;
-            last unless defined $line;
-            chomp $line;
-            my $now = time();
-            if ($line =~ /PC(18|92|20|22|51|11|61)\^/) {
-                my $pc = $1;
-                if (($pc == 92 || $pc == 11 || $pc == 61) && $pc22_seen) {
-                    next;
-                }
-                log_msg('RX', $line);
-                if ($state eq 'login' && $pc == 18) {
-                    $state = 'pc92_handshake';
-                    send_pc92a_k($sock);
-                    next;
-                }
-                if ($state eq 'pc92_handshake' && $line =~ /^D\s+\Q$mycall\E\s+PC92\^/ && $line =~ /\^K\^/) {
-                    $state = 'active';
-                }
-                if ($pc == 22) {
-                    $pc22_seen = 1;
-                    #log_msg('**', 'PC22 received: pc22_seen = 1');
-                }
-                if ($pc == 92 && !$remote_node && $line =~ /^PC92\^([^\^]+)\^\d+\^A\^\^/) {
-                    $remote_node = $1;
-                }
-                if ($pc == 51 && $line =~ /^PC51\^$mycall\^([^\^]+)\^1\^/) {
-                    my $dest = $1;
-                    my $reply = "PC51^$dest^$mycall^0^";
-                    print $sock "$reply";
-                    log_msg('TX', $reply);
-                }
+    if ($state eq 'await_pc92_pc22') {
+        if ($line =~ /^PC92\^([A-Z0-9\-]+)\^.*\^A\^/) {
+            $remote_node = $1 unless $remote_node;
+            print_log('RX', $line);
+        } elsif ($line =~ /^PC92\^.*\^K\^/) {
+            print_log('RX', $line);
+        } elsif ($line =~ /^PC22\^/) {
+            print_log('RX', $line);
+            print_log('**', "Session initialized with node $remote_node");
+            $filter_rx_only_specific_pc = 1;
+            $state = 'ready';
+            $last_pc92c_time = time;
+            $last_pc92k_time = time;
+
+            $periodic_pc92_timer = AnyEvent->timer(
+                after    => 5,
+                interval => 60,
+                cb       => \&check_pc92_timers
+            );
+
+            if ($mode eq 'mqtt' && !$mqtt) {
+                start_mqtt();
+            } elsif ($mode eq 'fifo' && !$fifo_watcher) {
+                start_fifo();
             }
+            return;
         }
-        my $now = time();
-        if ($now - $last_pc92c >= $interval_pc92c && scalar keys %{ get_all_conectados() }) {
-            send_pc92c($sock);
-            $last_pc92c = $now;
-        }
-        if ($now - $last_pc92k >= $interval_pc92k) {
-            send_pc92k($sock);
-            $last_pc92k = $now;
-        }
+        return;
     }
-    die "Connection lost";
+
+    if ($state eq 'ready') {
+        print_log('RX', $line) unless $line =~ /^PC22\^/;
+
+        if ($line =~ /^PC51\^([A-Z0-9\-]+)\^([A-Z0-9\-]+)\^1\^/) {
+            my $nodo_conectado = $1;
+            send_telnet("PC51^$mi_nodo^$nodo_conectado^0^");
+            print_log('TX', "PC51^$mi_nodo^$nodo_conectado^0^");
+        }
+
+        return;
+    }
+
+    print_log('RX', $line) if $state =~ /^await_/;
 }
 
-sub send_pc92a_k {
-    my ($sock) = @_;
-    my $epoch = time();
-    my ($sec, $min, $hour) = (gmtime($epoch))[0..2];
-    my $base_counter = $hour * 3600 + $min * 60 + $sec;
-    my $ts_int = $base_counter - ($base_counter % 60);
-    my $ts_flt = sprintf("%.2f", $base_counter);
-    print $sock "PC92^$mycall^$ts_int^A^^5$mycall:$ipv4^H99^\n"; log_msg('TX', 'Sent PC92 A');
-    print $sock "PC92^$mycall^$ts_flt^K^5$mycall:9000:1^0^0^$ipv4^$version^H99^\n"; log_msg('TX', 'Sent PC92 K');
-    print $sock "PC20^\n"; log_msg('TX', 'Sent PC20');
+sub send_telnet {
+    my ($msg) = @_;
+    $msg =~ s/\r?\n$//;
+    print $sock "$msg\n";
+    my $visible = ($state eq 'await_password') ? '********' : $msg;
+    print_log('TX', $visible);
 }
 
-sub send_pc92c {
-    my ($sock) = @_;
-    my $counter = generate_counter();
-    my $data = get_all_conectados();
-    my $payload = join('^', map { "1$_:$data->{$_}{ip}" } keys %$data);
-    my $pc92c = "PC92^$mycall^$counter^C^5$mycall^$payload^H99^";
-    print $sock "$pc92c";
-    log_msg('TX', "Sent PC92C: $pc92c");
+sub send_pc92a {
+    my $counter = get_counter();
+    my $msg = "PC92^$mi_nodo^$counter^A^^5$mi_nodo:$mi_ip^H99^";
+    send_telnet($msg);
 }
 
 sub send_pc92k {
-    my ($sock) = @_;
-    my $counter = generate_counter();
-    my $line = "PC92^$mycall^$counter^K^5$mycall:5457:1^0^0^$ipv4^$version^H99^";
-    print $sock "$line";
-    log_msg('TX', "Sent PC92K: $line");
+    my $counter = get_counter();
+    my $msg = "PC92^$mi_nodo^$counter.01^K^5$mi_nodo:9000:1^0^0^$mi_ip^$version^H99^";
+    send_telnet($msg);
 }
 
-sub run_mqtt_loop {
-    my ($sock) = @_;
-    my $mqtt;
-    my $last_check = time();
-    while (1) {
-        eval {
-            $mqtt = Net::MQTT::Simple->new($mqtt_host);
-            $mqtt->subscribe($mqtt_topic => sub {
-                my ($topic, $message) = @_;
-                my $data = eval { decode_json($message) };
-                return unless $data and $data->{call};
-                my $call = uc($data->{call});
-                my @ips = map { s/^\s+|\s+$//gr } split /,/, $data->{ip};
-                for my $i (0..$#ips) {
-                    my $ip = $ips[$i];
-                    my $full_call = $i == 0 ? $call : "$call-" . (19 + $i);
-                    my $buffer = get_all_conectados();
-                    my $already = exists $buffer->{$full_call};
-                    update_buffer($full_call, $ip);
-                    tx_pc92('A', $full_call, $ip, $sock) unless $already;
-                }
-            });
-            while (1) {
-                $mqtt->tick();
-                my $now = time();
-                if ($now - $last_check >= 10) {
-                    my $data = get_all_conectados();
-                    my @desconectar;
-                    for my $call (keys %$data) {
-                        if ($now - $data->{$call}{last} > $timeout) {
-                            push @desconectar, $call;
-                        }
-                    }
-                    for my $call (@desconectar) {
-                        tx_pc92('D', $call, '', $sock);
-                        delete_buffer_entry($call);
-                    }
-                    $last_check = $now;
-                }
-                sleep 0.5;
-            }
-        };
-        log_msg('**', "MQTT error: $@. Retrying in 10s...");
-        sleep 10;
-    }
-}
+sub send_pc92c {
+    my $counter = get_counter();
+    my $users_msg = '';
 
-sub run_fifo_loop {
-    my ($sock) = @_;
-    while (1) {
-        unless (-p $fifo_path) {
-            unlink $fifo_path;
-            system("mkfifo", $fifo_path);
-            #log_msg('**', "FIFO $fifo_path created");
+    if (%active_users) {
+        foreach my $user (keys %active_users) {
+            my $user_ip = $active_users{$user}{ip};
+            $users_msg .= "^1$user:$user_ip";
         }
-        sysopen(my $fh, $fifo_path, O_RDONLY | O_NONBLOCK) or do {
-            #log_msg('**', "Failed to open FIFO $fifo_path: $!");
-            sleep 5;
-            next;
-        };
-        log_msg('**', "FIFO $fifo_path opened for reading");
-        my $selector = IO::Select->new($fh);
-        while (1) {
-            unless (-p $fifo_path) {
-                log_msg('**', "FIFO $fifo_path was removed, restarting...");
-                last;
-            }
-            if ($selector->can_read(0.1)) {
-                my $line = <$fh>;
-                unless (defined $line) {
-                    log_msg('**', "FIFO closed (writer end disappeared), reopening...");
-                    last;
-                }
-                chomp $line;
-                next if $line =~ /^\s*$/;
-                if ($line =~ /^CONN,(\S+),(\S+)/) {
-                    my ($call, $ip) = (uc($1), $2);
-                    my $already = exists get_all_conectados()->{$call};
-                    update_buffer($call, $ip);
-                    tx_pc92('A', $call, $ip, $sock) unless $already;
-                } elsif ($line =~ /^DESC,(\S+)/) {
-                    my $call = uc($1);
-                    tx_pc92('D', $call, '', $sock);
-                    delete_buffer_entry($call);
-                }
-            }
-        }
-        close $fh;
-        sleep 1;
     }
+
+    my $msg = "PC92^$mi_nodo^$counter^C^5$mi_nodo$users_msg^H99^";
+    send_telnet($msg);
 }
 
-sub log_msg {
-    my ($type, $msg) = @_;
-    my $now = strftime("%H:%M:%S", localtime);
-    print "[$now][$type] $msg\n";
+sub get_counter {
+    my ($s, $us) = gettimeofday();
+    my @t = gmtime($s);
+    my $seconds_since_midnight = $t[0] + $t[1]*60 + $t[2]*3600 + $us / 1_000_000;
+    return sprintf("%.2f", $seconds_since_midnight);
 }
 
 sub get_public_ip {
-    my $ua = LWP::UserAgent->new;
-    my $response = $ua->get('http://api.ipify.org');
-    return $response->is_success ? $response->decoded_content : '192.168.255.255';
+    my $ip = get("http://ifconfig.me/ip") || '127.0.0.1';
+    chomp($ip);
+    return $ip;
+}
+
+sub reconnect_later {
+    my $w; $w = AnyEvent->timer(
+        after => 5,
+        cb => sub {
+            undef $w;
+            $state = 'await_login';
+            $buffer = '';
+            $remote_node = '';
+            cancel_login_timeout();
+            connect_telnet();
+        }
+    );
+}
+
+sub start_login_timeout {
+    cancel_login_timeout();
+    $login_timeout_watcher = AnyEvent->timer(
+        after => 10,
+        cb    => sub {
+            print_log('**', "Timeout waiting for login/password. Restarting connection...");
+            reconnect_later();
+        }
+    );
+}
+
+sub cancel_login_timeout {
+    undef $login_timeout_watcher if $login_timeout_watcher;
+}
+
+sub print_log {
+    my ($tag, $msg) = @_;
+
+    if ($filter_rx_only_specific_pc) {
+        #if ($tag eq 'RX' && $msg !~ /^(PC51|PC11|PC61)\^/) {
+        if ($tag eq 'RX' && $msg !~ /^(PC51)\^/) {
+            return;
+        }
+    }
+
+    my ($s, $us) = gettimeofday();
+    my @t = localtime($s);
+    printf("[%02d:%02d:%02d][%s] %s\n", $t[2], $t[1], $t[0], $tag, $msg);
+}
+
+sub check_pc92_timers {
+    return unless $state eq 'ready';
+    my $current_time = time;
+
+    if ($current_time - $last_pc92c_time >= $pc92c_interval) {
+        send_pc92c();
+        $last_pc92c_time = $current_time;
+    }
+
+    if ($current_time - $last_pc92k_time >= $pc92k_interval) {
+        send_pc92k();
+        $last_pc92k_time = $current_time;
+    }
+}
+
+sub start_mqtt {
+    $mqtt = AnyEvent::MQTT->new(
+        host => $mqtt_host,
+        port => $mqtt_port,
+        keep_alive_timer => 120,
+    );
+
+    my $subscribe_cv = $mqtt->subscribe(
+        topic    => $mqtt_topic,
+        callback => sub {
+            my ($topic, $message) = @_;
+            my $data = eval { decode_json($message) };
+            if ($@) {
+                # print "Error parsing JSON: $@\n";
+            } else {
+                # print "Call: $data->{call}, IP: $data->{ip}, TS: $data->{ts}\n";
+                handle_mqtt_data($data);
+            }
+        }
+    );
+
+    $subscribe_cv->cb(sub {
+        print_log('**', "MQTT subscription complete.");
+    });
+}
+
+sub handle_mqtt_data {
+    my ($data) = @_;
+    my $call = uc $data->{call};
+    my $ip   = $data->{ip};
+    my $ts   = $data->{ts} || time;
+
+    if (exists $active_users{$call}) {
+        $active_users{$call}{ts} = $ts;
+    } else {
+        $active_users{$call} = { ip => $ip, ts => $ts };
+        my $msg = "PC92^$mi_nodo^" . get_counter() . "^A^^1$call:$ip^H99^";
+        send_telnet($msg);
+        print_log('**', "New user connected: $call");
+    }
+
+    my $current_time = time;
+
+    foreach my $user (keys %active_users) {
+        if ($current_time - $active_users{$user}{ts} > $timeout_conn) {
+            my $msg = "PC92^$mi_nodo^" . get_counter() . "^D^^1$user^H98^";
+            send_telnet($msg);
+            delete $active_users{$user};
+            print_log('**', "User $user disconnected due to inactivity");
+        }
+    }
+}
+
+sub start_fifo {
+    if (!-p $fifo_path) {
+        unlink $fifo_path if -e $fifo_path;
+        system("mkfifo", $fifo_path) == 0 or die "Could not create FIFO: $!";
+    }
+
+    open(my $fh, "<", $fifo_path) or die "Cannot open FIFO: $!";
+
+    $fifo_watcher = AnyEvent->io(
+        fh   => $fh,
+        poll => 'r',
+        cb   => sub {
+            my $line = <$fh>;
+            return unless defined $line;
+            chomp $line;
+            handle_fifo_line($line);
+        }
+    );
+}
+
+sub handle_fifo_line {
+    my ($line) = @_;
+
+    if ($line =~ /^CONN,([A-Z0-9\-]+),([\d\.]+)$/i) {
+        my ($call, $ip) = (uc($1), $2);
+        my $msg = "PC92^$mi_nodo^" . get_counter() . "^A^^1$call:$ip^H99^";
+        send_telnet($msg);
+        print_log('**', "FIFO: Connected $call from $ip");
+    }
+    elsif ($line =~ /^DESC,([A-Z0-9\-]+)$/i) {
+        my $call = uc $1;
+        my $msg = "PC92^$mi_nodo^" . get_counter() . "^D^^1$call^H98^";
+        send_telnet($msg);
+        print_log('**', "FIFO: Disconnected $call");
+    }
+    else {
+        print_log('**', "FIFO: Invalid line: $line");
+    }
 }
