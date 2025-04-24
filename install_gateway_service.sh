@@ -10,13 +10,12 @@
 #    ./install_gateway_service.sh
 #
 #  Requirements:
-#    - gateway.pl must be present in the same directory as this script.
+#    - gateway.pl must be present at /root/volumenes/dxspider/nodo-2/local_cmd/gateway.pl
 #    - Root privileges (will prompt for sudo).
 #    - systemd-compatible system.
 #
 #  Actions:
-#    - Copies gateway.pl to /spider/local_cmd/
-#    - Makes it executable
+#    - Makes gateway.pl executable
 #    - Creates /etc/systemd/system/gateway.service
 #    - Enables the service to start at boot
 #    - Starts the service immediately
@@ -25,19 +24,16 @@
 #    journalctl -fu gateway.service
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250424 v0.3
+#  Version : 20250424 v0.4
 #  License : GNU GPLv3
 #
 
 set -e
 
-SCRIPT_SOURCE="./gateway.pl"
 SCRIPT_DEST="/spider/local_cmd/gateway.pl"
 SERVICE_FILE="/etc/systemd/system/gateway.service"
 
-echo "==> Installing gateway.pl script..."
-sudo mkdir -p /spider/local_cmd
-sudo cp "$SCRIPT_SOURCE" "$SCRIPT_DEST"
+echo "==> Ensuring gateway.pl is executable..."
 sudo chmod +x "$SCRIPT_DEST"
 
 echo "==> Creating systemd service file..."
