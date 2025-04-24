@@ -15,7 +15,7 @@
 #    - systemd-compatible system.
 #
 #  Actions:
-#    - Copies gateway.pl to /spider/perl/
+#    - Copies gateway.pl to /spider/local_cmd/
 #    - Makes it executable
 #    - Creates /etc/systemd/system/gateway.service
 #    - Enables the service to start at boot
@@ -25,18 +25,18 @@
 #    journalctl -fu gateway.service
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250418 v0.2
+#  Version : 20250424 v0.3
 #  License : GNU GPLv3
 #
 
 set -e
 
 SCRIPT_SOURCE="./gateway.pl"
-SCRIPT_DEST="/spider/perl/gateway.pl"
+SCRIPT_DEST="/spider/local_cmd/gateway.pl"
 SERVICE_FILE="/etc/systemd/system/gateway.service"
 
 echo "==> Installing gateway.pl script..."
-sudo mkdir -p /spider/perl
+sudo mkdir -p /spider/local_cmd
 sudo cp "$SCRIPT_SOURCE" "$SCRIPT_DEST"
 sudo chmod +x "$SCRIPT_DEST"
 
@@ -49,7 +49,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/perl $SCRIPT_DEST
-WorkingDirectory=/spider/perl
+WorkingDirectory=/spider/local_cmd
 StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=gateway-node
