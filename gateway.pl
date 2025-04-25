@@ -60,7 +60,7 @@
 #    $pc92k_interval    = 3600;           # Interval for PC92K keepalive (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250424 v1.1
+#  Version : 20250425 v1.2
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
@@ -222,9 +222,9 @@ sub handle_line {
         print_log('RX', $line) unless $line =~ /^PC22\^/;
 
         if ($line =~ /^PC51\^([A-Z0-9\-]+)\^([A-Z0-9\-]+)\^1\^/) {
-            my $nodo_conectado = $1;
-            send_telnet("PC51^$mi_nodo^$nodo_conectado^0^");
-            print_log('TX', "PC51^$mi_nodo^$nodo_conectado^0^");
+            my ($from, $to) = ($1, $2);
+            send_telnet("PC51^$to^$from^0^");
+            #print_log('TX', "PC51^$to^$from^0^");
         }
 
         return;
