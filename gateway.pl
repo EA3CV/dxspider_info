@@ -60,7 +60,7 @@
 #    $pc92k_interval    = 3600;           # Interval for PC92K keepalive (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250425 v1.2
+#  Version : 20250425 v1.3
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
