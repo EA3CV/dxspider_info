@@ -249,7 +249,7 @@ sub send_pc92a {
 
 sub send_pc92k {
     my $counter = get_counter();
-    my $msg = "PC92^$mi_nodo^$counter.01^K^5$mi_nodo:9000:1^0^0^$mi_ip^$version^H99^";
+    my $msg = "PC92^$mi_nodo^$counter^K^5$mi_nodo:9000:1^0^0^$mi_ip^$version^H99^";
     send_telnet($msg);
 }
 
