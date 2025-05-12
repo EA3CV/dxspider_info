@@ -82,6 +82,8 @@
 
     spots_node.pl             Utility to see the origin and quantity of spots per day.
 
+    send_spot.exe             Sending FT8 Spots without mobile coverage using send_spot.exe
+    
     unset/regpass.pl          Unify the unregistration + unpassword process in a single command
 
     Docs                      Documents contributed to the DXSpider Wiki:
@@ -95,4 +97,4 @@
 				  Network Latency Measurements in the DXCluster Node Network
 				  Node_configuration_for_user_access.pdf
 				  Restoring the user DB.pdf
-
+				  HowTo send_spot with FT8 Spots without Mobile Coverage 
