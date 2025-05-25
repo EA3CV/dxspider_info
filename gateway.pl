@@ -79,11 +79,10 @@ use JSON;
 
 my $host       = 'localhost';
 my $port       = 7303;
-my $username   = 'EA4URE-9';
-my $password   = 'notelodire';
+my $password   = 'xxxxxx';
 my $version    = 'kin_node:0.3';
 my $mi_nodo    = $username;
-my $mqtt_host  = '192.168.1.121';
+my $mqtt_host  = '192.168.1.1';
 my $mqtt_port  = 1883;
 my $mqtt_topic = 'api/heartbeat/socio';
 my $mode       = 'mqtt'; # 'mqtt' or 'fifo'
