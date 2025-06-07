@@ -35,12 +35,8 @@
 #    - Only enforces UTF-8 if not already active
 #    - Skips silently if system already uses UTF-8
 #
-# Kin EA3CV <ea3cv@cronux.net>
-# 20250606 v0.0
+# 20250607 v0.1
 #
-
-use strict;
-use warnings;
 
 # --- Detect distribution from /etc/os-release ---
 my %os_release;
@@ -98,7 +94,11 @@ if ($id =~ /^(debian|ubuntu|linuxmint|raspbian)$/) {
     run('apt update -qq');
     run('apt install -y locales');
     run("sed -i 's/^# *$utf8_locale/$utf8_locale/' /etc/locale.gen || echo '$utf8_locale UTF-8' >> /etc/locale.gen");
-    run("locale-gen $utf8_locale");
+
+    # Compatibilidad con Debian 12 (sin locale-gen)
+    run("mkdir -p /usr/lib/locale/$utf8_locale");
+    run("localedef -i $base_lang -f UTF-8 $utf8_locale");
+
     run("bash -c 'echo LANG=$utf8_locale > /etc/default/locale'");
     run("update-locale LANG=$utf8_locale");
 
