@@ -12,7 +12,7 @@
 #    Save as: /spider/local_cmd/mnodes.pl
 #
 #  Author   : Kin EA3CV ea3cv@cronux.net
-#  Version  : 20250411 v1.8
+#  Version  : 20250608 v1.9
 #
 
 use strict;
@@ -48,15 +48,15 @@ my @out = (
     " --------  - -  ---------  ---------------"
 );
 
-# Mostrar primero el nodo local (sin afectar al contador)
+# Mostrar primero el nodo local (sin afectar a contadores)
 push @out, format_node($local_node, $now) if $local_node;
 
-# Luego los nodos remotos ordenados
+# Nodos remotos ordenados
 foreach my $dxchan (sort { $a->call cmp $b->call } @nodes) {
     push @out, format_node($dxchan, $now);
 }
 
-# Luego los RBN si los hay
+# Nodos RBN al final
 if (@rbn_nodes) {
     push @out, " ";
     foreach my $dxchan (sort { $a->call cmp $b->call } @rbn_nodes) {
@@ -64,9 +64,19 @@ if (@rbn_nodes) {
     }
 }
 
-# Contador final: solo nodos remotos
-my $total = scalar(@nodes);
-push @out, " ", " Total Nodes:  $total", " ";
+# Contadores de nodos remotos
+my ($total, $registered, $with_passwd) = (0, 0, 0);
+foreach my $dxchan (@nodes) {
+    $total++;
+    $registered++  if reg($dxchan->call);
+    $with_passwd++ if pass($dxchan->call);
+}
+
+# Pie alineado
+push @out, " ", sprintf(
+    "Total:%5d  Register:%5d  Password:%5d",
+    $total, $registered, $with_passwd
+), " ";
 
 return (1, @out);
 
