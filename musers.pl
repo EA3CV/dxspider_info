@@ -12,7 +12,7 @@
 #    Save as: /spider/local_cmd/musers.pl
 #
 #  Author   : Kin EA3CV (ea3cv@cronux.net)
-#  Version  : 20250411 v1.6
+#  Version  : 20250608 v1.7
 #
 
 use strict;
@@ -30,7 +30,7 @@ my @out = (
     " --------  - -  ---------  ---------------"
 );
 
-my $count = 0;
+my ($total, $registered, $with_passwd) = (0, 0, 0);
 
 foreach my $dxchan (sort { $a->call cmp $b->call } DXChannel::get_all_users) {
     my $call = $dxchan->call;
@@ -50,10 +50,16 @@ foreach my $dxchan (sort { $a->call cmp $b->call } DXChannel::get_all_users) {
     );
 
     push @out, sprintf(" %-9s $isreg $ispass  USER $sort $time_on", $call);
-    $count++;
+
+    $total++;
+    $registered++ if $isreg eq "R";
+    $with_passwd++ if $ispass eq "P";
 }
 
-push @out, " ", " Total Users:  $count", " ";
+push @out, " ", sprintf(
+    "Total:%5d  Register:%5d  Password:%5d",
+    $total, $registered, $with_passwd
+), " ";
 
 return (1, @out);
 
