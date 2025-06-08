@@ -7,7 +7,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250330 v1.7
+# 20250608 v1.9
 #
 
 use strict;
@@ -36,10 +36,16 @@ my $current_path = abs_path(".");
 my $disk_usage   = qx(df -h "$current_path" | awk 'NR==2 {print \$5}');
 chomp($_) for ($distro, $hostname, $disk_usage);
 
+# Obtener locale de forma portátil (soporta Alpine, Docker, etc.)
+my $locale = qx(locale 2>/dev/null | grep '^LANG=' | cut -d= -f2);
+chomp($locale);
+$locale = "" if $locale =~ /^\s*$/;
+
 push @out, "------------------------------------ Host --------------------------------------";
 push @out, sprintf "%22s %-20s", "Host:", $hostname;
 push @out, sprintf "%22s %-10s        %8s %-10s", "Distro:", $distro, "Perl:", $perl_version;
 push @out, sprintf "%22s %-10s             %8s %-10s", "Path:", $current_path, "Disk usage:", $disk_usage;
+push @out, sprintf "%22s %-20s", "Locale:", $locale;
 push @out, " ";
 
 # Información de red
@@ -70,7 +76,27 @@ push @out, " ";
 
 # Total de peers y usuarios
 push @out, "----------------------------- Total Peers/Users --------------------------------";
-push @out, sprintf "%22s %-10s        %8s %-10s", "Peers Nodes:", scalar(DXChannel::get_all_nodes()) - 1, "Total Users:", scalar DXChannel::get_all_users();
+
+my ($total_peers, $reg_peers, $pass_peers) = (0, 0, 0);
+foreach my $dxchan (DXChannel::get_all_nodes()) {
+    next if $dxchan->call eq $main::mycall;
+    my $ref = DXUser::get_current(uc $dxchan->call) || {};
+    $total_peers++;
+    $reg_peers++  if $ref->{registered} && $ref->{registered} eq "1";
+    $pass_peers++ if $ref->{passwd};
+}
+
+my ($total_users, $reg_users, $pass_users) = (0, 0, 0);
+foreach my $dxchan (DXChannel::get_all_users()) {
+    my $ref = DXUser::get_current(uc $dxchan->call) || {};
+    $total_users++;
+    $reg_users++  if $ref->{registered} && $ref->{registered} eq "1";
+    $pass_users++ if $ref->{passwd};
+}
+
+push @out, sprintf "%18s%4d%19s%5d", "Peers Nodes:", $total_peers, "Total Users:", $total_users;
+push @out, sprintf "%18s%4d%19s%5d", "Register:", $reg_peers, "Register:", $reg_users;
+push @out, sprintf "%18s%4d%19s%5d", "Password:", $pass_peers, "Password:", $pass_users;
 push @out, " ";
 
 # Spots
@@ -103,6 +129,8 @@ push @out, "--------------------------------- Node Vars ------------------------
 push @out, " ";
 push @out, "         Max number simultaneous conn:    \$main::maxconnect_node = ".$main::maxconnect_node;
 push @out, "                   Max connlist pairs:    \$DXUser::maxconnlist = ".$DXUser::maxconnlist;
+push @out, "       Max age of lastseen. Users (s):    \$DXUser::tooold = ".$DXUser::tooold;
+push @out, "   Max age of lastin. Users/Nodes (s):    \$DXUser::veryold = ".$DXUser::veryold;
 push @out, " ";
 push @out, "--------------------------------- Spots Vars -----------------------------------";
 push @out, " ";
@@ -278,8 +306,8 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
 my $dxchan;
 push @out, " ";
 push @out, "-------------------------------- Partners List ---------------------------------";
-push @out, "Node      Type  Version  Build  R  P  Priv  Badnode  Isolate";
-push @out, "--------  ----  -------  -----  -  -  ----  -------  -------";
+push @out, "Node      Type  Version  Build  R  P  Priv  Isolate";
+push @out, "--------  ----  -------  -----  -  -  ----  -------";
 
 foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     my $call = $dxchan->call();
@@ -304,14 +332,14 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
 #    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
     my $version = (Route::Node::get($call) // {})->{version};
     my $build = (Route::Node::get($call) // {})->{build};
-    my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
+#    my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
     my $reg = (DXUser::get_current($call) // {})->{registered} eq "1" ? "R" : "";
     my $pass = (DXUser::get_current($call) // {})->{passwd} ? "P" : "";
     my $isolate = (DXUser::get_current($call) // {})->{isolate} ? "Y" : "";
 
 if ($type eq "NODE") {
-    push @out, sprintf "%-9s %-4s %7s %6s %3s %2s %4s %6s   %6s",
-                $call, $sort, $version, $build, $reg, $pass, $priv, $badnode, $isolate;
+    push @out, sprintf "%-9s %-4s %7s %6s %3s %2s %4s %6s",
+                $call, $sort, $version, $build, $reg, $pass, $priv, $isolate;
 }
 
 }
