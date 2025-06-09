@@ -8,7 +8,7 @@
 #    node via Telnet and sends PC92 messages (A/D/C/K) based on real-time events
 #    received via MQTT or a named FIFO pipe.
 #
-#    It handles authentication, periodic PC92C, reports, 
+#    It handles authentication, periodic PC92C, reports,
 #    connection timeouts, and DXSpider protocol formatting.
 #
 #    After session initialization, the script filters incoming Telnet traffic and
@@ -60,7 +60,7 @@
 #    $pc92k_interval    = 3600;           # Interval for PC92K keepalive (seconds)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250425 v1.3
+#  Version : 20250530 v1.5
 #
 #  License : This software is released under the GNU General Public License v3.0 (GPLv3)
 #
@@ -78,10 +78,11 @@ use AnyEvent::MQTT;
 use JSON;
 
 my $host       = 'localhost';
-my $port       = 7303;
-my $password   = 'xxxxxx';
+my $port       = 7300;
+my $password   = 'xxxxxxx';
 my $version    = 'kin_node:0.3';
-my $mi_nodo    = $username;
+my $mi_nodo    = 'XX0XXX-9';
+my $username   = $mi_nodo;
 my $mqtt_host  = '192.168.1.1';
 my $mqtt_port  = 1883;
 my $mqtt_topic = 'api/heartbeat/socio';
