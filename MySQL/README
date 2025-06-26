@@ -1,0 +1,62 @@
+# DXSpider – Support for Berkeley DB and MariaDB/MySQL Backends
+
+This directory contains the necessary modules to enable DXSpider to use either the traditional **Berkeley DB (`DB_File`)** or a relational **MariaDB/MySQL** database as its user storage backend, depending on manual configuration.
+
+## Purpose
+
+To allow DXSpider to operate with either **`DB_File`** (the legacy system) or **MariaDB/MySQL** for storing user information, while maintaining full compatibility with the original interface (`get`, `put`, `del`, `close`, etc.).
+
+## Included Files
+
+- `DB_File.pm`  
+  The original module based on `DB_File`, used by default in DXSpider.
+
+- `DB_Mysql.pm`  
+  An alternative module implementing an SQL backend for users, supporting the `users_new` table in a MariaDB/MySQL database.
+
+- `DXUser.pm`  
+  A patched version of the module adapted to work with the selected backend (Berkeley or MySQL), without altering system-wide logic.
+
+- `DXVars.pm`  
+  Updated to define new global variables required for MariaDB/MySQL operation.
+
+- `update_new_sysop.pl`  
+  A script that replaces the original `update_sysop.pl`. It is designed to initialise the `mycall` and `myalias` users with optional password and registration support, specifically for use with MySQL.
+
+- `export_users_mysql.pl`  
+  A script that replaces `export_users.pl`, used to back up the MySQL user database to `users_backup.sql` and a `user_json` file.
+
+- `export_v3j_to_mysql.pl`  
+  A migration script for transferring user records from the original Berkeley DB `users.v3j` to the new `users_new` table in MySQL.
+
+## Selecting the Backend
+
+Backend selection is made **by directly editing the source code** where `tie %u, ...` is used — replace `'DB_File'` with `'DB_Mysql'` as needed.
+
+> ⚠️ There is no automatic logic to select the backend using a global variable. Selection is manual and explicit.
+
+## Requirements for the MariaDB Backend
+
+- A MariaDB database with the `users_new` table correctly created (see `DESCRIBE users_new;`).
+- Connection variables must be defined in `DXVars.pm`:
+  - `$main::mysql_db`
+  - `$main::mysql_user`
+  - `$main::mysql_pass`
+  - `$main::mysql_host`
+- Required Perl modules:
+  - `DBI`
+  - `DBD::mysql`
+  - `JSON`
+  - `Scalar::Util`
+  - `Encode`
+
+## Advantages of the MariaDB Backend
+
+- Fast and flexible direct SQL queries.
+- Shared access to a single user database across multiple DXSpider nodes.
+- Improved maintainability, backups, and data migration.
+- Full support for `utf8mb4` and special characters.
+
+## Warning
+
+There is no synchronisation between the Berkeley and MariaDB backends. Migration must be done manually using the provided export/import scripts.
