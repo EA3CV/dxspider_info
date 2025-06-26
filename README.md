@@ -22,6 +22,8 @@
 
     conndisc.pl               Reports connections/disconnections or attempted connections to or from nodes.
 
+    field.pl                  Updates a single user/node field (database)
+
     show/list_pc92_nodes      Show nodes seen via PC92
 
     mnodes.pl		  List of connected nodes for use from a mobile app
