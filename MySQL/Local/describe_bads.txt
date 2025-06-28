@@ -1,0 +1,8 @@
++-----------+-------------+------+-----+---------+-------+
+| Field     | Type        | Null | Key | Default | Extra |
++-----------+-------------+------+-----+---------+-------+
+| list_name | varchar(32) | NO   | PRI | NULL    |       |
+| callsign  | varchar(32) | NO   | PRI | NULL    |       |
+| timestamp | bigint(20)  | NO   |     | NULL    |       |
++-----------+-------------+------+-----+---------+-------+
+3 rows in set (0,001 sec)
