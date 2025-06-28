@@ -1,0 +1,197 @@
+--- /root/spider-watch/spider/perl/DXHash.pm    2025-05-05 11:45:01.971035343 +0200
++++ /root/volumenes/dxspider/nodo-6/local/DXHash.pm     2025-06-28 09:05:46.623863427 +0200
+@@ -10,56 +10,71 @@
+ #
+ # The files that are created live in /spider/local_data (was data)
+ #
+-# Dunno why I didn't do this earlier but heyho..
+-#
+ # Copyright (c) 2001 Dirk Koopman G1TLH
+ #
+-#
++# Kin EA3CV
++# Modified for use of files or mysql
+ #
+
+ package DXHash;
+
++use strict;
++use warnings;
+ use DXVars;
+ use DXUtil;
+ use DXDebug;
+
+-use strict;
+-
+-sub new
+-{
++sub new {
+        my ($pkg, $name) = @_;
+
+-       # move existing file
++    die "DXHash->new: missing list name" unless defined $name;
++
++    if ($main::db_backend && $main::db_backend eq 'mysql') {
++        require DXHash_DB;
++        return bless { name => $name, _db => DXHash_DB->new($name) }, $pkg;
++    }
++
+        localdata_mv($name);
+        my $s = readfilestr($main::local_data, $name);
+-       my $self = undef;
+-       $self = eval $s if $s;
+-       dbg("error in reading $name in DXHash $@") if $@;
+-       $self = bless({name => $name}, $pkg) unless defined $self;
+-       return $self;
++    my $self;
++
++    if ($s) {
++        eval { $self = eval $s };
++        if ($@) {
++            dbg("error reading $name in DXHash: $@");
++            $self = undef;  # Puedes forzar die si prefieres no continuar: die ...
++        }
+ }
+
+-sub put
+-{
++    $self ||= { name => $name };
++    return bless $self, $pkg;
++}
++
++sub put   { my $s = shift; return $s->{_db}->put(@_)    if $s->{_db}; _put($s, @_);   }
++sub add   { my $s = shift; return $s->{_db}->add(@_)    if $s->{_db}; _add($s, @_);   }
++sub del   { my $s = shift; return $s->{_db}->del(@_)    if $s->{_db}; _del($s, @_);   }
++sub in    { my $s = shift; return $s->{_db}->in(@_)     if $s->{_db}; _in($s, @_);    }
++sub set   { my $s = shift; return $s->{_db}->set(@_)    if $s->{_db}; _set($s, @_);   }
++sub unset { my $s = shift; return $s->{_db}->unset(@_)  if $s->{_db}; _unset($s, @_); }
++sub show  { my $s = shift; return $s->{_db}->show(@_)   if $s->{_db}; _show($s, @_);  }
++
++sub _put {
+        my $self = shift;
+        writefilestr($main::local_data, $self->{name}, undef, $self);
+ }
+
+-sub add
+-{
++sub _add {
+        my $self = shift;
+        my $n = uc shift;
+        my $t = shift || $main::systime;
+        $self->{$n} = $t;
+
+-       # also add the base version if it has some ssid on it
+        my $nn = $n;
+        $nn =~ s|(?:-\d+)?(?:/\w)?$||;
+        $self->{$nn} = $t unless exists $self->{$nn} || $n eq $nn;
+ }
+
+-sub del
+-{
++sub _del {
+        my $self = shift;
+        my $n = uc shift;
+        my $exact = shift;
+@@ -68,80 +83,66 @@
+
+        my $nn = $n;
+        $nn =~ s|(?:-\d+)?(?:/\w)?$||;
+-       my @ssid = (0..99);
+-       delete $self->{"$nn-$_"} for @ssid;
++    delete $self->{"$nn-$_"} for 0..99;
+ }
+
+-
+-sub in
+-{
++sub _in {
+        my $self = shift;
+        my $n = uc shift;
+        my $exact = shift;
+
+        return 1 if exists $self->{$n};
+        return 0 if $exact;
++
+        $n =~ s/-\d+$//;
+        return exists $self->{$n};
+ }
+
+-# this is really just a general shortcut for all commands to
+-# set and unset values
+-sub set
+-{
++sub _set {
+        my ($self, $priv, $noline, $dxchan, $line) = @_;
+        return (1, $dxchan->msg('e5')) unless $dxchan->priv >= $priv;
+        my @f = split /\s+/, $line;
+        return (1, $noline) unless @f;
+-       my $f;
+-       my @out;
+
+-       foreach $f (@f) {
+-
+-               if ($self->in($f, 1)) {
++    my @out;
++    foreach my $f (@f) {
++        if (_in($self, $f, 1)) {
+                        push @out, $dxchan->msg('hasha',uc $f, $self->{name});
+-                       next;
+-               }
+-               $self->add($f, $main::systime);
++        } else {
++            _add($self, $f, $main::systime);
+                push @out, $dxchan->msg('hashb', uc $f, $self->{name});
+        }
+-       $self->put;
++    }
++    _put($self);
+        return (1, @out);
+ }
+
+-# this is really just a general shortcut for all commands to
+-# set and unset values
+-sub unset
+-{
++sub _unset {
+        my ($self, $priv, $noline, $dxchan, $line) = @_;
+        return (1, $dxchan->msg('e5')) unless $dxchan->priv >= $priv;
+        my @f = split /\s+/, $line;
+        return (1, $noline) unless @f;
+-       my $f;
+-       my @out;
+-
+-       foreach $f (@f) {
+
+-               unless ($self->in($f, 1)) {
++    my @out;
++    foreach my $f (@f) {
++        if (_in($self, $f, 1)) {
++            _del($self, $f, 1);
++            push @out, $dxchan->msg('hashc', uc $f, $self->{name});
++        } else {
+                        push @out, $dxchan->msg('hashd', uc $f, $self->{name});
+-                       next;
+                }
+-               $self->del($f, 1);
+-               push @out, $dxchan->msg('hashc', uc $f, $self->{name});
+        }
+-       $self->put;
++    _put($self);
+        return (1, @out);
+ }
+
+-sub show
+-{
++sub _show {
+        my ($self, $priv, $dxchan) = @_;
+        return (1, $dxchan->msg('e5')) unless $dxchan->priv >= $priv;
+
+        my @out;
+-       for (sort keys %{$self}) {
+-               next if $_ eq 'name';
+-               push @out, $dxchan->msg('hashe', $_, cldatetime($self->{$_}));
++    foreach my $k (sort grep { $_ ne 'name' } keys %$self) {
++        push @out, $dxchan->msg('hashe', $k, cldatetime($self->{$k}));
+        }
+        return (1, @out);
+ }
