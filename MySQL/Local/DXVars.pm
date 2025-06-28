@@ -63,6 +63,7 @@ $mysql_user   = "yout_user";
 $mysql_pass   = "your_pass";
 $mysql_host   = "dx-mariadb";
 $mysql_table  = "users_new";
+$mysql_bads   = "bads";
 
 # the SQL database DBI dsn. Spots
 #$dsn = "dbi:SQLite:dbname=$root/data/dxspider.db";
