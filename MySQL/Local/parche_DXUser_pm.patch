@@ -1,1 +1,133 @@
- 
+--- /root/spider-watch/spider/perl/DXUser.pm    2025-06-27 10:42:08.558784759 +0200
++++ /root/volumenes/dxspider/nodo-6/local/DXUser.pm     2025-06-27 10:49:30.163740871 +0200
+@@ -3,7 +3,8 @@
+ #
+ # Copyright (c) 1998 - Dirk Koopman G1TLH
+ #
+-#
++# Kin EA3CV
++# Modified to allow DB_File or DB_Mysql
+ #
+
+ package DXUser;
+@@ -23,10 +24,14 @@
+ use DXChannel;
+ use DXJSON;
+
++require DB_Mysql;
++
+ use strict;
+
+ use vars qw(%u $dbm $filename %valid $lastoperinterval $lasttime $lru $lrusize $tooold $veryold $v3);
+
++our $backend = $main::db_backend || 'dbfile';
++
+ %u = ();
+ $dbm = undef;
+ $filename = undef;
+@@ -148,6 +153,25 @@
+
+        $json = DXJSON->new->canonical(1);
+        my $fn = "users";
++
++    # If the backend is 'mysql', we delegate all logic to DB_Mysql.pm
++    if ($backend eq 'mysql') {
++        require DB_Mysql;
++
++               *get           = \&DB_Mysql::get;
++               *put           = \&DB_Mysql::put;
++               *new           = \&DB_Mysql::new;
++               *alloc         = \&DB_Mysql::alloc;
++               *del           = \&DB_Mysql::del;
++               *close         = \&DB_Mysql::close;
++               *get_all_calls = \&DB_Mysql::get_all_calls;
++               *sync          = \&DB_Mysql::sync;
++               *export        = \&DB_Mysql::export;
++               *recover       = \&DB_Mysql::recover;
++
++        return DB_Mysql::init($mode);
++    }
++
+        $filename = localdata("$fn.v3j");
+        unless (-e $filename || $mode == 2 ) {
+                if (-e localdata("$fn.v3") || -e localdata("$fn.v2")) {
+@@ -198,7 +222,7 @@
+ sub finish
+ {
+        dbg('DXUser finished') unless $readonly;
+-       $dbm->sync;
++       $dbm->sync if defined $dbm;
+        undef $dbm;
+        untie %u;
+ }
+@@ -373,7 +397,8 @@
+
+ sub sync
+ {
+-       $dbm->sync;
++       $dbm->sync if defined $dbm;
++
+ }
+
+ #
+@@ -718,6 +743,60 @@
+ }
+
+
++sub export_mysql {
++    my $name = shift || 'user_json';
++    my $fn = $name ne 'user_json' ? $name : "$main::local_data/$name";
++
++    # Intentar crear backup con mariadb-dump
++    if ($main::mysql_backup // 1) {
++        my $dump = "$main::local_data/users_backup.sql";
++        my $cmd = "mariadb-dump --ssl=OFF -h '$main::mysql_host' -u '$main::mysql_user' -p'$main::mysql_pass' $main::mysql_db $main::mysql_table > $dump";
++
++        my $exit = system($cmd);
++        if ($exit != 0) {
++            my $error_msg = "[EXPORT_MYSQL] mariadb-dump failed (exit code $exit). CMD: $cmd";
++            LogDbg('DXUser', $error_msg);
++            return (1, $error_msg);
++        } else {
++            LogDbg('DXUser', "[EXPORT_MYSQL] Backup MySQL guardado en $dump");
++        }
++    }
++
++    my $fh = IO::File->new(">$fn") or return (1, "cannot open $fn ($!)");
++    print $fh export_preamble();
++
++    my $json = DXJSON->new->canonical(1);
++    my @calls = DB_Mysql::get_all_calls();
++    my $count = 0;
++    my $err   = 0;
++
++foreach my $call (@calls) {
++    my $ref = DB_Mysql::get($call);
++    next unless $ref;
++
++    # Eliminar claves con valor NULL (undef en Perl)
++    foreach my $k (keys %$ref) {
++        delete $ref->{$k} if !defined $ref->{$k};
++    }
++
++    eval {
++        my $encoded = $json->encode($ref);
++        print $fh "$call\t$encoded\n";
++        $count++;
++    };
++    if ($@) {
++        LogDbg('DXUser', "Export error on $call: $@");
++        $err++;
++    }
++}
++
++    $fh->close;
++    my $s = "[EXPORT_MYSQL] Exported users to $fn - $count users, $err errors";
++    LogDbg('DXUser', $s);
++    return (1, $s);
++}
++
++
+ #
+ # export the database to an ascii file
+ #
