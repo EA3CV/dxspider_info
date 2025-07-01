@@ -1,6 +1,6 @@
 --- /root/spider-watch/spider/perl/DXHash.pm    2025-05-05 11:45:01.971035343 +0200
-+++ /root/volumenes/dxspider/nodo-6/local/DXHash.pm     2025-06-28 09:05:46.623863427 +0200
-@@ -10,56 +10,71 @@
++++ /root/volumenes/dxspider/nodo-6/local/DXHash.pm     2025-07-01 11:31:25.060799821 +0200
+@@ -10,56 +10,78 @@
  #
  # The files that are created live in /spider/local_data (was data)
  #
@@ -31,11 +31,16 @@
 -       # move existing file
 +    die "DXHash->new: missing list name" unless defined $name;
 +
-+    if ($main::db_backend && $main::db_backend eq 'mysql') {
++    # Si está activado el backend MySQL, se usa exclusivamente
++    if (defined $main::db_backend && $main::db_backend eq 'mysql') {
 +        require DXHash_DB;
-+        return bless { name => $name, _db => DXHash_DB->new($name) }, $pkg;
++        my $db = DXHash_DB->new($name);
++        dbg("DXHash: usando SOLO backend MySQL para '$name'");
++        return bless { name => $name, _db => $db }, $pkg;
 +    }
 +
++    # Si no está activado el backend MySQL, se usa solo fichero
++    dbg("DXHash: usando SOLO backend FILE para '$name'");
         localdata_mv($name);
         my $s = readfilestr($main::local_data, $name);
 -       my $self = undef;
@@ -48,8 +53,8 @@
 +    if ($s) {
 +        eval { $self = eval $s };
 +        if ($@) {
-+            dbg("error reading $name in DXHash: $@");
-+            $self = undef;  # Puedes forzar die si prefieres no continuar: die ...
++            dbg("DXHash: error leyendo $name: $@");
++            $self = undef;
 +        }
  }
 
@@ -59,6 +64,7 @@
 +    return bless $self, $pkg;
 +}
 +
++# Redirigir llamadas a los métodos correctos según backend
 +sub put   { my $s = shift; return $s->{_db}->put(@_)    if $s->{_db}; _put($s, @_);   }
 +sub add   { my $s = shift; return $s->{_db}->add(@_)    if $s->{_db}; _add($s, @_);   }
 +sub del   { my $s = shift; return $s->{_db}->del(@_)    if $s->{_db}; _del($s, @_);   }
@@ -67,6 +73,7 @@
 +sub unset { my $s = shift; return $s->{_db}->unset(@_)  if $s->{_db}; _unset($s, @_); }
 +sub show  { my $s = shift; return $s->{_db}->show(@_)   if $s->{_db}; _show($s, @_);  }
 +
++# Métodos internos (FILE only)
 +sub _put {
         my $self = shift;
         writefilestr($main::local_data, $self->{name}, undef, $self);
@@ -92,7 +99,7 @@
         my $self = shift;
         my $n = uc shift;
         my $exact = shift;
-@@ -68,80 +83,66 @@
+@@ -68,80 +90,66 @@
 
         my $nn = $n;
         $nn =~ s|(?:-\d+)?(?:/\w)?$||;
@@ -195,3 +202,4 @@
         }
         return (1, @out);
  }
+
