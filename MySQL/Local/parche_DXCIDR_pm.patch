@@ -1,0 +1,326 @@
+--- /root/spider-watch/spider/perl/DXCIDR.pm    2025-04-29 19:19:36.102715666 +0200
++++ /root/volumenes/dxspider/nodo-6/local/DXCIDR.pm     2025-07-02 12:54:38.265765696 +0200
+@@ -10,13 +10,13 @@
+ use strict;
+ use warnings;
+ use 5.16.1;
++
+ use DXVars;
+ use DXDebug;
+ use DXUtil;
+ use DXLog;
+ use IO::File;
+ use File::Copy;
+-
+ use Socket qw(AF_INET AF_INET6 inet_pton inet_ntop);
+
+ our $active = 0;
+@@ -26,13 +26,17 @@
+ my $count4 = 0;
+ my $count6 = 0;
+
+-sub _fn
+-{
++BEGIN {
++    if ($main::db_backend eq 'mysql') {
++        require DXCIDR_DB;
++    }
++}
++
++sub _fn {
+        return localdata($badipfn);
+ }
+
+-sub _read
+-{
++sub _read {
+        my $suffix = shift;
+        my $fn = _fn();
+        $fn .= ".$suffix" if $suffix;
+@@ -41,7 +45,6 @@
+        my $ecount;
+        my $line;
+
+-
+        if ($fh) {
+                while (<$fh>) {
+                        chomp;
+@@ -66,17 +69,18 @@
+        return @out;
+ }
+
+-sub _load
+-{
++sub _load {
+        return unless $active;
+        my $suffix = shift;
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::load_ips($suffix);
++    }
+        my @in = _read($suffix);
+        return 0 unless @in;
+        return scalar add(@in);
+ }
+
+-sub _put
+-{
++sub _put {
+        my $suffix = shift;
+        my $fn = _fn() . ".$suffix";
+        my $r = rand;
+@@ -95,19 +99,20 @@
+        return $count;
+ }
+
+-sub append
+-{
++sub append {
+        return 0 unless $active;
+-
+        my $suffix = shift;
+        my @in = @_;
+-       my @out;
++
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::append_ips($suffix, @in);
++    }
+
+        if ($suffix) {
+                my $fn = _fn() . ".$suffix";
+                my $fh = IO::File->new;
+                if ($fh->open("$fn", "a+")) {
+-                       $fh->seek(0, 2);        # belt and braces !!
++            $fh->seek(0, 2);
+                        print $fh "$_\n" for @in;
+                        $fh->close;
+                } else {
+@@ -119,149 +124,122 @@
+        return scalar @in;
+ }
+
+-sub add
+-{
++sub add {
+        return 0 unless $active;
+-       my $count = 0;
+-       my @out;
++    my @ips = @_;
+
+-       for my $ip (@_) {
+-               # protect against stupid or malicious
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::add_ips(undef, @ips);
++    }
++
++    my $count = 0;
++    for my $ip (@ips) {
+                next unless is_ipaddr($ip);
+-#              next if $ip =~ /^127\./;
+-#              next if $ip =~ /^::1$/;
+-#              next if find($ip);
+                if ($ip =~ /\./) {
+                        eval {$ipv4->add_any($ip)};
+-                       if ($@) {
+-                               push @out, $@;
+-                       } else {
+-                               ++$count;
+-                               ++$count4;
+-                       }
++            $@ ? LogDbg('err', $@) : (++$count, ++$count4);
+                } elsif ($ip =~ /:/) {
+                        eval {$ipv6->add_any($ip)};
+-                       if ($@) {
+-                               push @out, $@;
+-                       } else {
+-                               ++$count;
+-                               ++$count6;
+-                       }
+-               } else {
+-                       LogDbg('err', "DXCIDR::add non-ip address '$ip' read");
++            $@ ? LogDbg('err', $@) : (++$count, ++$count6);
+                }
+        }
+        return $count;
+ }
+
+-sub clean_prep
+-{
++sub clean_prep {
+        return unless $active;
+
+-       if ($ipv4 && $count4) {
+-               $ipv4->clean;
+-               $ipv4->prep_find;
+-       }
+-       if ($ipv6 && $count6) {
+-               $ipv6->clean;
+-               $ipv6->prep_find;
++    if ($main::db_backend eq 'mysql') {
++        return;  # No-op para MySQL
+        }
++
++    $ipv4->clean, $ipv4->prep_find if $ipv4 && $count4;
++    $ipv6->clean, $ipv6->prep_find if $ipv6 && $count6;
+ }
+
+-sub _sort
+-{
+-       my @in;
++sub _sort {
++    my @in = @_;
+        my @out;
+-       my $c;
+-       for my $i (@_) {
+-               my @s;
+-
++    my @tmp;
++    for my $i (@in) {
+                my @ip = split m|/|, $i;
+-               if ($ip[0] =~ /:/) {
+-                       @s = map{$_ ? hex($_) : 0} split /:/, $ip[0];
+-               } else {
+-                       @s = map{$_ ? $_+0 : 0} split /\./, $ip[0];
+-               }
+-               while (@s < 8) {
+-                       push @s, 0;
+-               }
+-#              my $s = pack "S*", reverse @s;
++        my @s = $ip[0] =~ /:/ ? map { $_ ? hex($_) : 0 } split /:/, $ip[0]
++                              : map { $_+0 } split /\./, $ip[0];
++        push @s, 0 while @s < 8;
+                my $s = pack "n*", @s;
+-#              my $s = join ':', map {sprintf "%04d:", $_} @s;
+-#              push @in, [inet_pton(m|:|?AF_INET6:AF_INET, $ip[0]), @ip];
+-               push @in, [$s, @ip];
++        push @tmp, [$s, @ip];
+        }
+-       @out = sort {$a->[0] cmp $b->[0]} @in;
+-#      @out = sort {$a->[0] <=> $b->[0]} @in;
++    @out = sort { $a->[0] cmp $b->[0] } @tmp;
+        return map { "$_->[1]/$_->[2]"} @out;
+ }
+
+-sub list
+-{
++sub list {
+        return () unless $active;
++
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::list_ips();
++    }
++
+        my @out;
+        push @out, $ipv4->list, $ipv4->list_range if $count4;
+        push @out, $ipv6->list, $ipv6->list_range if $count6;
+        return _sort(@out);
+ }
+
+-sub find
+-{
++sub find {
+        return 0 unless $active;
+        return 0 unless $_[0];
+
+-       if ($_[0] =~ /\./) {
+-               return $ipv4->find($_[0]) if $count4;
+-       }
+-       return $ipv6->find($_[0]) if $count6;
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::find_ip($_[0]);
+ }
+
+-sub init
+-{
+-       eval { require Net::CIDR::Lite };
+-       if ($@) {
+-               LogDbg('DXProt', "DXCIDR: load (cpanm) the perl module Net::CIDR::Lite to check for bad IP addresses (or CIDR ranges)");
+-               return;
++    return $ipv4->find($_[0]) if $_[0] =~ /\./ && $count4;
++    return $ipv6->find($_[0]) if $_[0] =~ /:/ && $count6;
++    return 0;
++}
++
++sub init {
++    if ($main::db_backend eq 'mysql') {
++        require DXCIDR_DB;
++        LogDbg('DXCIDR', "(*) DXCIDR: using MySQL backend ONLY for 'badip.local'");
++        LogDbg('DXCIDR', "(*) DXCIDR: using MySQL backend ONLY for 'badip.global'");
++        LogDbg('DXCIDR', "(*) DXCIDR: using MySQL backend ONLY for 'badip.torexit'");
++        LogDbg('DXCIDR', "(*) DXCIDR: using MySQL backend ONLY for 'badip.torrelay'");
++        $active = 1;
++        return reload();
+        }
+
+-       eval {import Net::CIDR::Lite };
++    eval { require Net::CIDR::Lite; import Net::CIDR::Lite };
+        if ($@) {
+-               LogDbg('DXProt', "DXCIDR: import Net::CIDR::Lite error $@");
++        LogDbg('DXProt', "DXCIDR: load Net::CIDR::Lite failed: $@");
+                return;
+        }
+-
+        $active = 1;
+-
+        my $fn = _fn();
+-       if (-e $fn) {
+-               move $fn, "$fn.base";
+-       }
+-
++    move $fn, "$fn.base" if -e $fn;
+        _touch("$fn.local");
+-
+-       reload();
+-
++    return reload();
+ }
+
+-sub _touch
+-{
++sub _touch {
+        my $fn = shift;
+        my $now = time;
+        local (*TMP);
+        utime ($now, $now, $fn) || open (TMP, ">>$fn") || LogDbg('err', "DXCIDR::touch: Couldn't touch $fn: $!");
+ }
+
+-sub reload
+-{
++sub reload {
+        return 0 unless $active;
+
+-       new();
++    if ($main::db_backend eq 'mysql') {
++        return DXCIDR_DB::reload();
++    }
+
++    new();
+        my $count = 0;
+        my $files = 0;
+-
+        LogDbg('DXProt', "DXCIDR::reload reload database" );
+-
+        my $dir;
+        opendir($dir, $main::local_data);
+        while (my $fn = readdir $dir) {
+@@ -272,16 +250,17 @@
+                $files++;
+        }
+        closedir $dir;
+-
+        LogDbg('DXProt', "DXCIDR::reload $count ip addresses found (IPV4: $count4 IPV6: $count6) in $files badip files" );
+-
+        return $count;
+ }
+
+-sub new
+-{
++sub new {
+        return 0 unless $active;
+
++    if ($main::db_backend eq 'mysql') {
++        return 1;  # No-op
++    }
++
+        $ipv4 = Net::CIDR::Lite->new;
+        $ipv6 = Net::CIDR::Lite->new;
+        $count4 = $count6 = 0;
