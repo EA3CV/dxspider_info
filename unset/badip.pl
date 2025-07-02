@@ -24,8 +24,14 @@
 #
 #  Author:   Kin EA3CV <ea3cv@cronux.net>
 #
-# 20250404 v0.1
+#  20250702 v1.0  to support MySQL backend
 #
+
+use strict;
+use warnings;
+use DXCIDR;
+use DXVars;
+use DBI;
 
 my ($self, $line) = @_;
 return (1, $self->msg('e5')) if $self->remotecmd;
@@ -43,43 +49,66 @@ if ($in[0] =~ /^[_\d\w]+$/) {
 return (1, "unset/badip: need [suffix (def: local)] IP(s)") unless @in;
 
 my %to_remove = map { $_ => 1 } grep { is_ipaddr($_) } @in;
-my $fn = DXCIDR::_fn() . ".$suffix";
-
-unless (-e $fn) {
-    return (1, "unset/badip: file $fn does not exist.");
-}
-
-# Leer archivo original
-my @lines;
-if (open my $fh, '<', $fn) {
-    @lines = <$fh>;
-    close $fh;
-} else {
-    return (1, "unset/badip: cannot read $fn: $!");
-}
-
-# Eliminar líneas que coincidan
-my @kept;
 my @removed;
-foreach my $line (@lines) {
-    chomp $line;
-    next unless $line =~ /[\.:]/;
-    if ($to_remove{$line}) {
-        push @removed, $line;
+
+# Detect backend
+my $use_mysql = defined $main::db_backend && $main::db_backend eq 'mysql';
+
+if ($use_mysql) {
+    # MySQL backend
+    my $dbh = DBI->connect(
+        "DBI:mysql:database=$main::mysql_db;host=$main::mysql_host",
+        $main::mysql_user,
+        $main::mysql_pass,
+        { RaiseError => 1, AutoCommit => 1, mysql_enable_utf8mb4 => 1 }
+    );
+
+    my $table = $main::mysql_badips || 'badips';
+    my $sth = $dbh->prepare("DELETE FROM $table WHERE ip = ? AND suffix = ?");
+
+    foreach my $ip (keys %to_remove) {
+        my $cidr = ($ip =~ /:/) ? "$ip/128" : "$ip/32";
+        my $count = $sth->execute($cidr, $suffix);
+        push @removed, $ip if $count;
+    }
+
+    $dbh->disconnect;
+} else {
+    # File-based backend
+    my $fn = DXCIDR::_fn() . ".$suffix";
+
+    unless (-e $fn) {
+        return (1, "unset/badip: file $fn does not exist.");
+    }
+
+    my @lines;
+    if (open my $fh, '<', $fn) {
+        @lines = <$fh>;
+        close $fh;
     } else {
-        push @kept, $line;
+        return (1, "unset/badip: cannot read $fn: $!");
+    }
+
+    my @kept;
+    foreach my $line (@lines) {
+        chomp $line;
+        next unless $line =~ /[\.:]/;
+        if ($to_remove{$line}) {
+            push @removed, $line;
+        } else {
+            push @kept, $line;
+        }
+    }
+
+    if (open my $fh, '>', $fn) {
+        print $fh "$_\n" for @kept;
+        close $fh;
+    } else {
+        return (1, "unset/badip: cannot write to $fn: $!");
     }
 }
 
-# Reescribir el archivo
-if (open my $fh, '>', $fn) {
-    print $fh "$_\n" for @kept;
-    close $fh;
-} else {
-    return (1, "unset/badip: cannot write to $fn: $!");
-}
-
-# Recargar listas desde disco
+# Reload the updated list
 DXCIDR::reload();
 
 if (@removed) {
@@ -89,3 +118,4 @@ if (@removed) {
 }
 
 return (1, @out);
+
