@@ -1,12 +1,12 @@
-# DXSpider – Support for Berkeley DB and MariaDB/MySQL Backends
+# DXSpider – Support for Berkeley DB/Files and MariaDB/MySQL Backends
 
-This directory contains the necessary modules to enable DXSpider to use either the traditional Berkeley DB (`DB_File`) or a relational MariaDB/MySQL database as its user storage backend, depending on manual configuration.
+This directory contains the necessary modules to enable DXSpider to use either the traditional Berkeley DB (`DB_File`) or a relational MariaDB/MySQL database as its user and rules storage backend, depending on manual configuration.
 
 ## Purpose
 
-To allow DXSpider to operate with either `DB_File` (the legacy system) or MariaDB/MySQL for storing user information, while maintaining full compatibility with the original interface (`get`, `put`, `del`, `close`, etc.).
+To allow DXSpider to operate with either `DB_File` (the legacy system) or MariaDB/MySQL for storing user and rules-related data (badwords, badspotter, badips, etc.), while maintaining full compatibility with the original interface (`get`, `put`, `del`, `close`, etc.).
 
-It has also been extended to plain-text file systems such as those used in `badword`, `baddx`, etc.
+It has also been extended to support plain-text file systems such as those used in `badword`, `baddx`, `badspotter`, and `badip.*` files.
 
 ## Included Files
 
@@ -29,7 +29,13 @@ It has also been extended to plain-text file systems such as those used in `badw
   The original module based on `BadWords`, used by default in DXSpider.
 
 - `BadWords_DB.pm`  
-  An alternative module implementing an SQL backend for `badwords`, supporting the `badwords` table in a MariaDB/MySQL database.
+  An alternative module implementing an SQL backend for `badwords`, supporting the `badwords` table in MariaDB/MySQL.
+
+- `DXCIDR.pm`  
+  Updated to support both file-based and SQL-based storage of `badip.*` files (`badip.local`, `badip.global`, `badip.torexit`, `badip.torrelay`).
+
+- `DXCIDR_DB.pm`  
+  SQL backend implementation for `badip.*` entries, supporting storage in the `badips` table.
 
 - `DXVars.pm`  
   Updated to define new global variables required for MariaDB/MySQL operation.
@@ -49,6 +55,9 @@ It has also been extended to plain-text file systems such as those used in `badw
 - `export_badwords_to_mysql.pl`  
   A migration script for transferring data from the original files `badword`, `badword.new` and `badw_regex` to the new `badwords` table in MySQL.
 
+- `export_badips_to_mysql.pl`  
+  A migration script for transferring IPs from all `badip.*` files to the `badips` table in MySQL.
+
 ## Selecting the Backend
 
 Backend selection is made **by directly editing the source code** where `tie %u, ...` is used — replace `'DB_File'` with `'DB_Mysql'` as needed.
@@ -64,6 +73,7 @@ Backend selection is made **by directly editing the source code** where `tie %u,
   - `users_new`
   - `bads`
   - `badwords`
+  - `badips`
 
 - Connection variables must be defined in `DXVars.pm`:
   - `$main::mysql_db`
@@ -73,6 +83,7 @@ Backend selection is made **by directly editing the source code** where `tie %u,
   - `$main::mysql_table`
   - `$main::mysql_bads`
   - `$main::mysql_badwords`
+  - `$main::mysql_badips`
 
 - Required Perl modules:
   - `DBI`
@@ -84,7 +95,7 @@ Backend selection is made **by directly editing the source code** where `tie %u,
 ## Advantages of the MariaDB Backend
 
 - Fast and flexible direct SQL queries.
-- Shared access to a single user database across multiple DXSpider nodes.
+- Shared access to a single user and rule database across multiple DXSpider nodes.
 - Improved maintainability, backups, and data migration.
 - Full support for `utf8mb4` and special characters.
 
@@ -107,6 +118,8 @@ There is no synchronisation between the Berkeley and MariaDB backends. Migration
    - `export_users_mysql.pl`
    - `export_v3j_to_mysql.pl`
    - `export_badwords_to_mysql.pl`
+   - `export_bads_to_mysql.pl`
+   - `export_badips_to_mysql.pl`
 
 5. Edit source and destination paths in each script as needed.
 
