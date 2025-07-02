@@ -1,0 +1,9 @@
++---------+-------------+------+-----+---------+----------------+
+| Field   | Type        | Null | Key | Default | Extra          |
++---------+-------------+------+-----+---------+----------------+
+| id      | int(11)     | NO   | PRI | NULL    | auto_increment |
+| ip      | varchar(64) | NO   | MUL | NULL    |                |
+| version | tinyint(4)  | NO   |     | NULL    |                |
+| suffix  | varchar(16) | YES  |     |         |                |
++---------+-------------+------+-----+---------+----------------+
+4 rows in set (0,001 sec)
