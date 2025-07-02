@@ -12,10 +12,10 @@ sub new {
     my $self = {};
     bless $self, $class;
 
-    die "BadWords_DB: \$main::mysql_badwors no definido"
-        unless $main::mysql_badwors;
+    die "BadWords_DB: \$main::mysql_badwords no definido"
+        unless $main::mysql_badwords;
 
-    $self->{table} = $main::mysql_badwors;
+    $self->{table} = $main::mysql_badwords;
 
     $self->{dbh} = DBI->connect(
         "DBI:mysql:database=$main::mysql_db;host=$main::mysql_host",
