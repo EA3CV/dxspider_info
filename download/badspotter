@@ -1,15 +1,12 @@
-bless( {
-  DL1DQRM => 1681203127,
-  BA3AX => 1679211633,
-  EA7IXM => 1721210971,
-  E8EHOMEASB => 1708331347,
-  PE1OBL => 1738869588,
-  EG7SW => 1682091227,
-  EC5TDR => 1671997301,
-  EA1YUT => 1674219518,
-  DL9FTF => 1721566519,
-  EA11XXX => 1720777002,
-  EA7YXM => 1720856454,
-  name => 'badspotter',
-  RA3AAA => 1679162375
-}, 'DXHash' )
+set/badspotter BA3AX
+set/badspotter DL1DQRM
+set/badspotter DL9FTF
+set/badspotter E8EHOMEASB
+set/badspotter EA11XXX
+set/badspotter EA1YUT
+set/badspotter EA7IXM
+set/badspotter EA7YXM
+set/badspotter EC5TDR
+set/badspotter EG7SW
+set/badspotter PE1OBL
+set/badspotter RA3AAA
