@@ -1,3 +1,9 @@
+# Until the commands are ready:
+# load/baddx
+# load/badspotter
+# load/badnode
+# In order for baddx, badspotter, and badnode to load, it is necessary to restart the node.
+
 # Add into your crontab
 
 # badip
