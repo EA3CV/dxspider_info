@@ -1,8 +1,21 @@
-# Until the commands are ready:
-# load/baddx
-# load/badspotter
-# load/badnode
-# In order for baddx, badspotter, and badnode to load, it is necessary to restart the node.
+The files:
+
+* baddx.run
+* badspotter.run
+* badnode.run
+* badword.new.run
+
+contain the DXSpider commands required to insert the entries they include.
+
+They have been provided in this “.run” format so the original files are not overwritten.
+
+You can view them from a Linux shell with a simple command such as:
+`cat <file.run>`
+
+Then copy/paste the output directly into the DXSpider console.
+
+If an entry already exists, it will not be overwritten.
+
 
 # Add into your crontab
 
@@ -13,8 +26,8 @@
 32 * * * * run_cmd('load/badip')
 
 # baddx, badspotter, badnode, badword
-33 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/baddx')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badspotter')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badspotter')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badword.new')
-35 * * * * run_cmd('load/badwords')
+33 * * * * spawn('cd /spider/local_data; wget -qN -O baddx.run https://github.com/EA3CV/dxspider_info/blob/main/download/baddx')
+33 * * * * spawn('cd /spider/local_data; wget -qN -O badspotter.run https://github.com/EA3CV/dxspider_info/blob/main/download/badspotter')
+33 * * * * spawn('cd /spider/local_data; wget -qN -O badnode.run https://github.com/EA3CV/dxspider_info/blob/main/download/badnode')
+33 * * * * spawn('cd /spider/local_data; wget -qN -O badword.new.run https://github.com/EA3CV/dxspider_info/blob/main/download/badword.new')
+#35 * * * * run_cmd('load/badwords')
