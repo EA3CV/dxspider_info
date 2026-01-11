@@ -1,23 +1,27 @@
-The files:
+1. Installing the badwords.pl command
 
-* baddx.run
-* badspotter.run
-* badnode.run
-* badword.new.run
+To use the badwords merge command, you must first download the script badwords.pl and place it in the correct DXSpider directory.
 
-contain the DXSpider commands required to insert the entries they include.
+1.1. Create the destination directory (if it does not exist)
 
-They have been provided in this “.run” format so the original files are not overwritten.
+In your DXSpider system, commands are stored under local_cmd.
+If the load directory does not exist, create it:
 
-You can view them from a Linux shell with a simple command such as:
-`cat <file.run>`
+mkdir -p /spider/local_cmd/load
 
-Then copy/paste the output directly into the DXSpider console.
+(Adjust /spider if your DXSpider installation uses a different base path)
 
-If an entry already exists, it will not be overwritten.
+1.2. Download the script using wget
+
+Run the following command to download the script directly from GitHub:
+
+wget -O /spider/local_cmd/load/badwords.pl \
+https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/badwords.pl
+
+This will download the correct file and save it with the proper name.
 
 
-# Add into your crontab
+2. Add into your crontab
 
 # badip
 30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.torexit')
@@ -26,8 +30,8 @@ If an entry already exists, it will not be overwritten.
 32 * * * * run_cmd('load/badip')
 
 # baddx, badspotter, badnode, badword
-33 * * * * spawn('cd /spider/local_data; wget -qN -O baddx.run https://github.com/EA3CV/dxspider_info/blob/main/download/baddx')
-33 * * * * spawn('cd /spider/local_data; wget -qN -O badspotter.run https://github.com/EA3CV/dxspider_info/blob/main/download/badspotter')
-33 * * * * spawn('cd /spider/local_data; wget -qN -O badnode.run https://github.com/EA3CV/dxspider_info/blob/main/download/badnode')
-33 * * * * spawn('cd /spider/local_data; wget -qN -O badword.new.run https://github.com/EA3CV/dxspider_info/blob/main/download/badword.new')
-#35 * * * * run_cmd('load/badwords')
+33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/baddx')
+33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badspotter')
+33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badnode')
+33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badword.new')
+35 * * * * run_cmd('load/badwords')
