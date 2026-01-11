@@ -1,28 +1,127 @@
-1. Installing the badwords.pl command
+```md
+# DXSpider – Automatic Bad Lists Update
 
-To use the badwords merge command, you must first download the script badwords.pl and place it in the correct DXSpider directory.
+This repository provides scripts and data files to safely maintain and update
+DXSpider “bad lists”:
 
-1.1. Create the destination directory (if it does not exist)
+- bad words
+- bad nodes
+- bad DX calls
+- bad spotters
 
-In your DXSpider system, commands are stored under local_cmd.
-If the load directory does not exist, create it:
+The update mechanism is intentionally split into two phases:
 
+1. **Download** updated `.new` files (typically via cron)
+2. **Merge and load** those files into DXSpider using `load/*` scripts
+
+This approach guarantees }>no data loss, no overwrites, and no duplicates.
+
+---
+
+## Prerequisites
+
+- A working DXSpider installation
+- Internet access from the DXSpider host
+
+---
+
+## Required load scripts (mandatory)
+
+Before enabling **any automatic download**, you **must install** the following
+four scripts:
+
+- `badwords.pl`
+- `badnode.pl`
+- `baddx.pl`
+- `badspotter.pl`
+
+These scripts are responsible for merging newly downloaded data with the
+existing DXSpider data structures.
+
+---
+
+## Installation directory
+
+All scripts must be installed in:
+
+```
+
+/spider/local_cmd/load
+
+````
+
+If the directory does not exist, create it:
+
+```bash
 mkdir -p /spider/local_cmd/load
+````
 
-(Adjust /spider if your DXSpider installation uses a different base path)
+---
 
-1.2. Download the script using wget
+## Download the load scripts
 
-Run the following command to download the script directly from GitHub:
+Download the **raw files** from GitHub:
 
-wget -O /spider/local_cmd/load/badwords.pl \
-https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/badwords.pl
+```bash
+wget -O /spider/local_cmd/load/badwords.pl https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/badwords.pl
 
-This will download the correct file and save it with the proper name.
+wget -O /spider/local_cmd/load/badnode.pl https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/badnode.pl
 
+wget -O /spider/local_cmd/load/baddx.pl https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/baddx.pl
 
-2. Add into your crontab
+wget -O /spider/local_cmd/load/badspotter.pl https://raw.githubusercontent.com/EA3CV/dxspider_info/main/load/badspotter.pl
+```
 
+---
+
+## Set execution permissions
+
+```bash
+chmod +x /spider/local_cmd/load/*.pl
+```
+
+---
+
+## What the load scripts do
+
+Each `load/*` script performs the following steps:
+
+1. Reads the list currently loaded in DXSpider memory
+2. Reads the corresponding `.new` file downloaded from disk
+3. Merges both sources without duplicates
+4. Preserves all locally defined entries
+5. Writes the updated result back to disk in the correct DXSpider format
+
+The scripts are **idempotent** and safe to run multiple times.
+
+---
+
+## Manual usage (recommended test)
+
+Before enabling cron, test the scripts manually from inside DXSpider:
+
+```
+load/badwords
+load/badnode
+load/baddx
+load/badspotter
+```
+
+No parameters are required.
+
+---
+
+## Automatic downloads using cron
+
+Once **all four load scripts are installed and tested**, you may enable
+automatic downloads using `cron`.
+
+Cron jobs **only download** the `.new` files.
+They do **not** load or merge any data by themselves.
+
+### Example crontab
+
+```bash
 # badip
 30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.torexit')
 30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.torrelay')
@@ -31,7 +130,18 @@ This will download the correct file and save it with the proper name.
 
 # baddx, badspotter, badnode, badword
 33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/baddx.new')
+32 * * * * run_cmd('load/baddx')
 33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badspotter.new')
+32 * * * * run_cmd('load/badspotter')
 33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badnode.new')
+32 * * * * run_cmd('load/badnode')
 33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badword.new')
 35 * * * * run_cmd('load/badwords')
+```
+---
+
+## Author
+
+**Kin, EA3CV**
+
+```
