@@ -114,13 +114,13 @@ They do **not** load or merge any data by themselves.
 
 # baddx, badspotter, badnode, badword
 33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/baddx.new')
-32 * * * * run_cmd('load/baddx')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badspotter.new')
-32 * * * * run_cmd('load/badspotter')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badnode.new')
-32 * * * * run_cmd('load/badnode')
-33 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badword.new')
-35 * * * * run_cmd('load/badwords')
+34 * * * * run_cmd('load/baddx')
+35 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badspotter.new')
+36 * * * * run_cmd('load/badspotter')
+37 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badnode.new')
+37 * * * * run_cmd('load/badnode')
+39 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badword.new')
+40 * * * * run_cmd('load/badwords')
 
 ---
 
