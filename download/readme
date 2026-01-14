@@ -105,11 +105,11 @@ Cron jobs **only download** the .new files.
 They do **not** load or merge any data by themselves.
 
 ### Example crontab
-
+                                                    
 # badip
-30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.torexit')
-30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.torrelay')
-30 * * * * spawn('cd /spider/local_data; wget -qN https://github.com/EA3CV/dxspider_info/blob/main/download/badip.global')
+30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.torexit')
+30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.torrelay')
+30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.global')
 32 * * * * run_cmd('load/badip')
 
 # baddx, badspotter, badnode, badword
