@@ -1,21 +1,22 @@
 #
-# command_list.pl - Execute queued DXSpider commands from local_data/command.send
-#                   and clear the file ONLY if all commands run successfully.
+# command_list.pl - Execute queued DXSpider commands from local_data/badnode.ai
+#                 and clear the file ONLY if all commands run successfully.
 #
 # Usage (from DXSpider console, sysop):
 #   command_list
 #
 # File format: one command per line, e.g.:
-#   set/badnode XX0ZZZ
+#   set/badnode XX0ZZ
 #   unset/badnode YY9AAA
 # Blank lines and lines starting with # are ignored.
 #
 # Safety:
 # - Local only (no remotecmd)
+# - Requires priv >= 9 (adjust if you prefer)
 # - Locks the file while processing
 #
 # Kin EA3CV <ea3cv@cronux.net>
-# 20260114 v1.0
+# 20260114 v1.1
 #
 
 use strict;
