@@ -7,6 +7,7 @@ DXSpider “bad lists”:
 - bad nodes
 - bad DX calls
 - bad spotters
+- bad ips
 
 The update mechanism is intentionally split into two phases:
 
@@ -63,21 +64,13 @@ wget -O /spider/local_cmd/load/badspotter.pl https://raw.githubusercontent.com/E
 
 ---
 
-## Set execution permissions
-
-chmod +x /spider/local_cmd/load/*.pl
-
----
-
 ## What the load scripts do
 
 Each load/* script performs the following steps:
 
 1. Reads the list currently loaded in DXSpider memory
 2. Reads the corresponding .new file downloaded from disk
-3. Merges both sources without duplicates
-4. Preserves all locally defined entries
-5. Writes the updated result back to disk in the correct DXSpider format
+3. Rebuild both sources without duplicates
 
 The scripts are **idempotent** and safe to run multiple times.
 
@@ -91,6 +84,7 @@ load/badwords
 load/badnode
 load/baddx
 load/badspotter
+load/baip
 
 No parameters are required.
 
@@ -110,6 +104,7 @@ They do **not** load or merge any data by themselves.
 30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.torexit')
 30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.torrelay')
 30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.global')
+30 * * * * spawn('cd /spider/local_data; wget -qN https://raw.githubusercontent.com/EA3CV/dxspider_info/main/download/badip.new')
 32 * * * * run_cmd('load/badip')
 
 # baddx, badspotter, badnode, badword
