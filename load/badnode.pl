@@ -1,19 +1,21 @@
 #
-# badnode.pl - Merge badnode entries in memory with badnode.new (downloaded from repo),
+# badnode.pl - Rebuild badnode entries in memory (DXProt::badnode, a DXHash)
+#              from disk sources: badnode.new + any badnode.* files in local_data,
 #              then write local_data/badnode in DXHash dumped format (bless({..}, 'DXHash')).
 #
-# Output order:
-#   Merged memory+disk
-#   Before merge: <n>
+# Output:
+#   Rebuilt disk -> memory
+#   Before rebuild: <n>
 #   Loaded from disk: <n>
-#   New additions: <n>
+#   Removed: <n>
+#   Added: <n>
 #   Final total: <n>
 #
 # Privilege: priv >= 9
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260111 v1.0
+# 20260115 v1.2
 #
 
 use strict;
@@ -56,12 +58,13 @@ sub _mem_nodes_hash {
     return %h;
 }
 
-sub _read_badnode_new_list {
-    my $fn = localdata("badnode.new");
+sub _read_list_file {
+    my ($path) = @_;
     my @nodes;
-    return @nodes unless -e $fn;
 
-    open(my $fh, '<', $fn) or return @nodes;
+    return @nodes unless defined $path && -e $path;
+
+    open(my $fh, '<', $path) or return @nodes;
     while (my $l = <$fh>) {
         chomp $l;
         $l =~ s/\r$//;
@@ -81,6 +84,41 @@ sub _read_badnode_new_list {
     return @nodes;
 }
 
+sub _read_all_disk_nodes {
+    my %seen;
+    my @all;
+
+    # 1) Base list: badnode.new
+    my $newfn = localdata("badnode.new");
+    for my $n (_read_list_file($newfn)) {
+        next if $seen{$n}++;
+        push @all, $n;
+    }
+
+    # 2) Extra lists: any badnode.* in local_data (except .new, .run)
+    eval {
+        my $dir;
+        opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
+        while (my $fn = readdir $dir) {
+            next unless my ($suffix) = $fn =~ /^badnode\.(\w+)$/;
+
+            next if $suffix eq 'new';
+            next if $suffix eq 'run';
+
+            my $path = "$main::local_data/$fn";
+            next unless -f $path;
+
+            for my $n (_read_list_file($path)) {
+                next if $seen{$n}++;
+                push @all, $n;
+            }
+        }
+        closedir $dir;
+    };
+
+    return @all;
+}
+
 sub _write_badnode_hashfile {
     my ($name, $href) = @_;
     my $fn = localdata("badnode");
@@ -89,12 +127,10 @@ sub _write_badnode_hashfile {
 
     print $fh "bless( {\n";
 
-    # Sort keys, but keep "name" as the last field (as in your example)
     for my $k (sort keys %{$href}) {
         my $v = $href->{$k};
         next unless defined $v && $v =~ /^\d+$/;
 
-        # Quote keys if needed (e.g., DB0ERF-5, 9M2PJU-1)
         my $key_out = ($k =~ /^[A-Z0-9]+$/) ? $k : "'" . $k . "'";
         print $fh "  $key_out => $v,\n";
     }
@@ -110,29 +146,33 @@ sub _write_badnode_hashfile {
 
 my $bn = _badnode_obj();
 
-# 1) Snapshot memory BEFORE merge
+# 1) Snapshot memory BEFORE rebuild
 my %mem = _mem_nodes_hash($bn);
 my $before_mem = scalar keys %mem;
 
-# 2) Read disk list (badnode.new from repo)
-my @disk_nodes = _read_badnode_new_list();
+# 2) Read disk sources (badnode.new + badnode.*)
+my @disk_nodes = _read_all_disk_nodes();
 my $loaded_from_disk = scalar @disk_nodes;
 
-# 3) Build union: start from memory (keep original timestamps), add disk nodes (new ones get "now")
-my %final = %mem;
+# 3) Build final set ONLY from disk.
+#    Preserve old timestamps for entries that still exist; new entries get "now".
+my %final;
 my $now = time;
 
 for my $n (@disk_nodes) {
     next unless defined $n && length $n;
-    $final{$n} = $now unless exists $final{$n};
+    $final{$n} = exists $mem{$n} ? $mem{$n} : $now;
 }
 
-# 4) Update in-memory DXProt::badnode too (keep behaviour consistent)
+# 4) Replace in-memory DXProt::badnode content (purge removed entries)
 if ($bn && ref($bn) eq 'DXHash') {
-    for my $k (keys %final) {
-        $bn->{$k} = $final{$k} unless exists $bn->{$k};
+    for my $k (keys %{$bn}) {
+        delete $bn->{$k} unless $k eq 'name';
     }
-    $bn->{name} = 'badnode';   # keep metadata consistent
+    for my $k (keys %final) {
+        $bn->{$k} = $final{$k};
+    }
+    $bn->{name} = 'badnode';
 }
 
 # 5) Write local_data/badnode in the correct dumped format
@@ -140,13 +180,14 @@ _write_badnode_hashfile('badnode', \%final);
 
 # 6) Counters
 my $final_total = scalar keys %final;
-my $new_additions = $final_total - $before_mem;
-$new_additions = 0 if $new_additions < 0;
+my $removed = $before_mem - $final_total; $removed = 0 if $removed < 0;
+my $added   = $final_total - $before_mem; $added   = 0 if $added   < 0;
 
-push @out, "Merged memory+disk";
-push @out, "Before merge: $before_mem";
+push @out, "Rebuilt disk -> memory";
+push @out, "Before rebuild: $before_mem";
 push @out, "Loaded from disk: $loaded_from_disk";
-push @out, "New additions: $new_additions";
+push @out, "Removed: $removed";
+push @out, "Added: $added";
 push @out, "Final total: $final_total";
 
 return (1, @out);
