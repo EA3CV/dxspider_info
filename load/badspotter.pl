@@ -1,23 +1,25 @@
 #
-# badspotter.pl - Merge badspotter entries in memory (DXProt::badspotter, a DXHash)
-#                 with badspotter.new on disk (downloaded from repo),
-#                 then write local_data/badspotter in DXHash dumped format (bless({..}, 'DXHash')).
+# badspotter.pl - Rebuild badspotter entries in memory (DXProt::badspotter, a DXHash)
+#                 from disk sources: badspotter.new + any badspotter.* files in local_data,
+#                 then write local_data/badspotter in DXHash dumped format.
 #
 # badspotter (memory): DXHash storing SPOTTERCALL => epoch_timestamp
 # badspotter.new (disk): plain text file, one spotter callsign per line (comments with # allowed)
+# badspotter.* (disk): additional plain text lists, same format (except badspotter.run is ignored)
 #
-# Output order:
-#   Merged memory+disk
-#   Before merge: <n>
+# Output:
+#   Rebuilt disk -> memory
+#   Before rebuild: <n>
 #   Loaded from disk: <n>
-#   New additions: <n>
+#   Removed: <n>
+#   Added: <n>
 #   Final total: <n>
 #
 # Privilege: priv >= 9
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260111 v1.0
+# 20260115 v1.2
 #
 
 use strict;
@@ -60,12 +62,13 @@ sub _mem_hash {
     return %h;
 }
 
-sub _read_new_list {
-    my $fn = localdata("badspotter.new");
+sub _read_list_file {
+    my ($path) = @_;
     my @items;
-    return @items unless -e $fn;
 
-    open(my $fh, '<', $fn) or return @items;
+    return @items unless defined $path && -e $path;
+
+    open(my $fh, '<', $path) or return @items;
     while (my $l = <$fh>) {
         chomp $l;
         $l =~ s/\r$//;
@@ -75,8 +78,7 @@ sub _read_new_list {
 
         $l = uc($l);
 
-        # Spotter callsigns can contain '-' (e.g. VE7CC-1). Usually no '/', but
-        # allowing '/' doesn't hurt for portability; tighten if you prefer.
+        # Spotter callsigns can contain '-' (e.g. VE7CC-1). Allow '/' too for portability.
         next unless $l =~ /^[A-Z0-9\/\-]+$/;
 
         push @items, $l;
@@ -84,6 +86,41 @@ sub _read_new_list {
     close $fh;
 
     return @items;
+}
+
+sub _read_all_disk_items {
+    my %seen;
+    my @all;
+
+    # 1) Base list: badspotter.new
+    my $newfn = localdata("badspotter.new");
+    for my $c (_read_list_file($newfn)) {
+        next if $seen{$c}++;
+        push @all, $c;
+    }
+
+    # 2) Extra lists: any badspotter.* in local_data (except .new, .run)
+    eval {
+        my $dir;
+        opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
+        while (my $fn = readdir $dir) {
+            next unless my ($suffix) = $fn =~ /^badspotter\.(\w+)$/;
+
+            next if $suffix eq 'new';
+            next if $suffix eq 'run';
+
+            my $path = "$main::local_data/$fn";
+            next unless -f $path;
+
+            for my $c (_read_list_file($path)) {
+                next if $seen{$c}++;
+                push @all, $c;
+            }
+        }
+        closedir $dir;
+    };
+
+    return @all;
 }
 
 sub _write_hashfile {
@@ -113,27 +150,31 @@ sub _write_hashfile {
 
 my $bs = _badspotter_obj();
 
-# 1) Snapshot memory BEFORE merge
+# 1) Snapshot memory BEFORE rebuild
 my %mem = _mem_hash($bs);
 my $before_mem = scalar keys %mem;
 
-# 2) Read badspotter.new from disk (repo-downloaded)
-my @disk_items = _read_new_list();
+# 2) Read disk sources (badspotter.new + badspotter.*)
+my @disk_items = _read_all_disk_items();
 my $loaded_from_disk = scalar @disk_items;
 
-# 3) Union: start from memory (preserve timestamps), add disk items (new ones get "now")
-my %final = %mem;
+# 3) Build final set ONLY from disk.
+#    Preserve old timestamps for entries that still exist; new entries get "now".
+my %final;
 my $now = time;
 
 for my $c (@disk_items) {
     next unless defined $c && length $c;
-    $final{$c} = $now unless exists $final{$c};
+    $final{$c} = exists $mem{$c} ? $mem{$c} : $now;
 }
 
-# 4) Update in-memory DXProt::badspotter too
+# 4) Replace in-memory DXProt::badspotter content (purge removed entries)
 if ($bs && ref($bs) eq 'DXHash') {
+    for my $k (keys %{$bs}) {
+        delete $bs->{$k} unless $k eq 'name';
+    }
     for my $k (keys %final) {
-        $bs->{$k} = $final{$k} unless exists $bs->{$k};
+        $bs->{$k} = $final{$k};
     }
     $bs->{name} = 'badspotter';
 }
@@ -143,13 +184,14 @@ _write_hashfile('badspotter', \%final);
 
 # 6) Counters
 my $final_total = scalar keys %final;
-my $new_additions = $final_total - $before_mem;
-$new_additions = 0 if $new_additions < 0;
+my $removed = $before_mem - $final_total; $removed = 0 if $removed < 0;
+my $added   = $final_total - $before_mem; $added   = 0 if $added   < 0;
 
-push @out, "Merged memory+disk";
-push @out, "Before merge: $before_mem";
+push @out, "Rebuilt disk -> memory";
+push @out, "Before rebuild: $before_mem";
 push @out, "Loaded from disk: $loaded_from_disk";
-push @out, "New additions: $new_additions";
+push @out, "Removed: $removed";
+push @out, "Added: $added";
 push @out, "Final total: $final_total";
 
 return (1, @out);
