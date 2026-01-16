@@ -1,6 +1,6 @@
 #
 # badwords.pl - Rebuild badwords in-memory ONLY from disk sources:
-#               badword.new (via BadWords::load) + any badword.* files,
+#               badword.new (via BadWords::load) + badword.local + any badword.* files,
 #               then write back updated badword.new (no duplicates).
 #
 # Usage:
@@ -18,7 +18,7 @@
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260115 v1.3
+# 20260116 v1.5
 #
 
 use strict;
@@ -33,6 +33,32 @@ return (1, $self->msg('e5')) if $self->priv < 9;
 
 # Count current in-memory list BEFORE rebuild
 my $before_mem = scalar BadWords::list_regex(0);   # canonical words only
+
+# -------- ensure badword.local exists (bootstrap from current in-memory list) --------
+sub _ensure_badword_local {
+    my $fn = $main::local_data ? "$main::local_data/badword.local" : undef;
+    return (0, 0) unless defined $fn && length $fn;
+
+    return (1, 0) if -e $fn;   # exists => do nothing
+
+    # Snapshot current in-memory canonical words and write them
+    my @words = BadWords::list_regex(0);
+
+    if (open(my $fh, '>', $fn)) {
+        for my $w (sort @words) {
+            next unless defined $w && length $w;
+            print $fh "$w\n";
+        }
+        close $fh;
+        return (1, scalar(@words));
+    }
+
+    # Non-fatal
+    return (0, 0);
+}
+
+my ($ok_local, $created_n) = _ensure_badword_local();
+push @out, "Created badword.local from memory: $created_n" if $ok_local && $created_n;
 
 # Load base list from filesystem (badword.new if present; otherwise legacy+migration)
 my @load_err = BadWords::load();
@@ -51,6 +77,7 @@ if (@load_err) {
 # We add words found in /spider/local_data/badword.<suffix> (suffix = \w+),
 # skipping badword.new (already handled by BadWords::load()) and badword.run
 # (often command-style content). We also ignore command-like lines if present.
+# NOTE: badword.local IS intentionally included here.
 my @extra_words;
 
 eval {
