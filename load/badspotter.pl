@@ -1,6 +1,6 @@
 #
 # badspotter.pl - Rebuild badspotter entries in memory (DXProt::badspotter, a DXHash)
-#                 from disk sources: badspotter.new + any badspotter.* files in local_data,
+#                 from disk sources: badspotter.new + badspotter.local + any badspotter.* files in local_data,
 #                 then write local_data/badspotter in DXHash dumped format.
 #
 # badspotter (memory): DXHash storing SPOTTERCALL => epoch_timestamp
@@ -19,7 +19,7 @@
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260115 v1.2
+# 20260116 v1.4
 #
 
 use strict;
@@ -88,6 +88,31 @@ sub _read_list_file {
     return @items;
 }
 
+sub _ensure_badspotter_local {
+    my ($mem_href) = @_;
+
+    my $fn = localdata("badspotter.local");
+    return (0, 0) unless defined $fn && length $fn;
+
+    # If it exists, do nothing
+    return (1, 0) if -e $fn;
+
+    # Create it from current in-memory snapshot
+    my @items = sort keys %{ $mem_href || {} };
+
+    if (open(my $fh, '>', $fn)) {
+        for my $c (@items) {
+            next unless defined $c && length $c;
+            print $fh "$c\n";
+        }
+        close $fh;
+        return (1, scalar(@items));
+    }
+
+    # Non-fatal: continue normal execution even if we can't create it
+    return (0, 0);
+}
+
 sub _read_all_disk_items {
     my %seen;
     my @all;
@@ -100,6 +125,7 @@ sub _read_all_disk_items {
     }
 
     # 2) Extra lists: any badspotter.* in local_data (except .new, .run)
+    #    NOTE: badspotter.local IS intentionally included here.
     eval {
         my $dir;
         opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
@@ -154,7 +180,11 @@ my $bs = _badspotter_obj();
 my %mem = _mem_hash($bs);
 my $before_mem = scalar keys %mem;
 
-# 2) Read disk sources (badspotter.new + badspotter.*)
+# 1b) Ensure badspotter.local exists (create it from memory snapshot if missing)
+my ($ok_local, $created_n) = _ensure_badspotter_local(\%mem);
+push @out, "Created badspotter.local from memory: $created_n" if $ok_local && $created_n;
+
+# 2) Read disk sources (badspotter.new + badspotter.* including badspotter.local)
 my @disk_items = _read_all_disk_items();
 my $loaded_from_disk = scalar @disk_items;
 
