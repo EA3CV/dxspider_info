@@ -1,6 +1,6 @@
 #
 # badnode.pl - Rebuild badnode entries in memory (DXProt::badnode, a DXHash)
-#              from disk sources: badnode.new + any badnode.* files in local_data,
+#              from disk sources: badnode.new + badnode.local + any badnode.* files in local_data,
 #              then write local_data/badnode in DXHash dumped format (bless({..}, 'DXHash')).
 #
 # Output:
@@ -15,7 +15,7 @@
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260115 v1.2
+# 20260116 v1.3
 #
 
 use strict;
@@ -84,6 +84,31 @@ sub _read_list_file {
     return @nodes;
 }
 
+sub _ensure_badnode_local {
+    my ($mem_href) = @_;
+
+    my $fn = localdata("badnode.local");
+    return (0, 0) unless defined $fn && length $fn;
+
+    # If it exists, do nothing
+    return (1, 0) if -e $fn;
+
+    # Create it from current in-memory nodes snapshot
+    my @nodes = sort keys %{ $mem_href || {} };
+
+    if (open(my $fh, '>', $fn)) {
+        for my $n (@nodes) {
+            next unless defined $n && length $n;
+            print $fh "$n\n";
+        }
+        close $fh;
+        return (1, scalar(@nodes));
+    }
+
+    # Non-fatal: continue normal execution even if we can't create it
+    return (0, 0);
+}
+
 sub _read_all_disk_nodes {
     my %seen;
     my @all;
@@ -96,6 +121,7 @@ sub _read_all_disk_nodes {
     }
 
     # 2) Extra lists: any badnode.* in local_data (except .new, .run)
+    #    NOTE: badnode.local IS intentionally included here.
     eval {
         my $dir;
         opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
@@ -150,7 +176,11 @@ my $bn = _badnode_obj();
 my %mem = _mem_nodes_hash($bn);
 my $before_mem = scalar keys %mem;
 
-# 2) Read disk sources (badnode.new + badnode.*)
+# 1b) Ensure badnode.local exists (create it from memory snapshot if missing)
+my ($ok_local, $created_n) = _ensure_badnode_local(\%mem);
+push @out, "Created badnode.local from memory: $created_n" if $ok_local && $created_n;
+
+# 2) Read disk sources (badnode.new + badnode.local + badnode.*)
 my @disk_nodes = _read_all_disk_nodes();
 my $loaded_from_disk = scalar @disk_nodes;
 
