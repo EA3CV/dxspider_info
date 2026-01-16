@@ -1,6 +1,6 @@
 #
 # baddx.pl - Rebuild baddx in memory (DXProt::baddx, a DXHash)
-#            from disk sources: baddx.new + any baddx.* files in local_data,
+#            from disk sources: baddx.new + baddx.local + any baddx.* files in local_data,
 #            then write local_data/baddx in DXHash dumped format.
 #
 # baddx (memory): DXHash storing CALLSIGN => epoch_timestamp
@@ -19,7 +19,7 @@
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260115 v1.2
+# 20260116 v1.4
 #
 
 use strict;
@@ -88,6 +88,31 @@ sub _read_list_file {
     return @items;
 }
 
+sub _ensure_baddx_local {
+    my ($mem_href) = @_;
+
+    my $fn = localdata("baddx.local");
+    return (0, 0) unless defined $fn && length $fn;
+
+    # If it exists, do nothing
+    return (1, 0) if -e $fn;
+
+    # Create it from current in-memory snapshot
+    my @items = sort keys %{ $mem_href || {} };
+
+    if (open(my $fh, '>', $fn)) {
+        for my $c (@items) {
+            next unless defined $c && length $c;
+            print $fh "$c\n";
+        }
+        close $fh;
+        return (1, scalar(@items));
+    }
+
+    # Non-fatal: continue normal execution even if we can't create it
+    return (0, 0);
+}
+
 sub _read_all_disk_items {
     my %seen;
     my @all;
@@ -99,7 +124,8 @@ sub _read_all_disk_items {
         push @all, $c;
     }
 
-    # 2) Extra lists: any baddx.* in local_data (except .new, .run, and "baddx" itself)
+    # 2) Extra lists: any baddx.* in local_data (except .new, .run)
+    #    NOTE: baddx.local IS intentionally included here.
     eval {
         my $dir;
         opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
@@ -156,7 +182,11 @@ my $bx = _baddx_obj();
 my %mem = _mem_hash($bx);
 my $before_mem = scalar keys %mem;
 
-# 2) Read disk sources (baddx.new + baddx.*)
+# 1b) Ensure baddx.local exists (create it from memory snapshot if missing)
+my ($ok_local, $created_n) = _ensure_baddx_local(\%mem);
+push @out, "Created baddx.local from memory: $created_n" if $ok_local && $created_n;
+
+# 2) Read disk sources (baddx.new + baddx.* including baddx.local)
 my @disk_items = _read_all_disk_items();
 my $loaded_from_disk = scalar @disk_items;
 
