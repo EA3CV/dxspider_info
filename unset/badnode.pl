@@ -2,10 +2,12 @@
 # unset/badnode.pl - Remove a badnode entry
 #
 # Behaviour:
-#   - If local_data/badnode.local does not exist, create it and
-#     populate it from the current in-memory DXProt::badnode list.
-#   - Remove the callsign passed to the command from badnode.local
-#     if present (comments and empty lines are preserved).
+#   - If suffix is provided:
+#       * Ensure local_data/badnode.<suffix> exists (populate from memory if missing)
+#       * Remove the callsign from badnode.<suffix> (preserve comments/blank lines)
+#   - If suffix is NOT provided:
+#       * Remove the callsign from ALL local_data/badnode.* files found
+#       * If none exist, ensure badnode.local exists (populate from memory) and try there
 #   - Always perform the standard DXSpider badnode->unset() action.
 #
 # Copyright (c) 1998 - Dirk Koopman G1TLH
@@ -13,6 +15,7 @@
 # Modified by Kin EA3CV <ea3cv@cronux.net>
 #
 # 20260117 v1.0
+# 20260202 v1.1  scan all badnode.* when no suffix
 #
 
 use strict;
@@ -57,8 +60,11 @@ sub _mem_badnode_items {
     return sort @items;
 }
 
-sub _ensure_badnode_local_from_mem {
-    my $fn = localdata("badnode.local");
+sub _ensure_badnode_file_from_mem {
+    my ($suffix) = @_;
+    $suffix = 'local' unless defined $suffix && length $suffix;
+
+    my $fn = localdata("badnode.$suffix");
     return unless defined $fn && length $fn;
 
     return if -e $fn;
@@ -76,7 +82,7 @@ sub _ensure_badnode_local_from_mem {
 
 sub _remove_call {
     my ($fn, $call) = @_;
-    return unless -e $fn;
+    return 0 unless defined $fn && length $fn && -e $fn;
 
     my @keep;
     my $changed = 0;
@@ -95,7 +101,11 @@ sub _remove_call {
                 next;
             }
 
-            my $u = uc($t);
+            # solo el primer token, por si hay "CALL comentario"
+            my ($tok) = split(/\s+/, $t, 2);
+            $tok = '' unless defined $tok;
+
+            my $u = uc($tok);
             if ($u eq $call) {
                 $changed = 1;
                 next;
@@ -112,22 +122,65 @@ sub _remove_call {
             close $wfh;
         }
     }
+
+    return $changed;
 }
 
-# ---------------- local side-effect ----------------
+sub _scan_badnode_files {
+    # returns list of full paths to local_data/badnode.*
+    my $local_fn = localdata("badnode.local");
+    return () unless defined $local_fn && length $local_fn;
 
-my ($call) = split(/\s+/, $line // '');
-$call = '' unless defined $call;
+    (my $dir = $local_fn) =~ s{/[^/]+$}{};
+
+    my @files;
+    if (opendir my $dh, $dir) {
+        @files = map { "$dir/$_" }
+                 grep { /^badnode\./ && -f "$dir/$_" }
+                 readdir $dh;
+        closedir $dh;
+    }
+    return @files;
+}
+
+# ---------------- parse args ----------------
+
+my @in = split /\s+/, ($line // '');
+
+# Optional suffix: treat first token as suffix if there is at least one more token
+my $suffix;
+if (@in > 1 && defined $in[0] && $in[0] =~ /^[_\w\d]+$/) {
+    $suffix = shift @in;
+}
+
+my $call = $in[0] // '';
 $call =~ s/^\s+|\s+$//g;
 $call = uc($call);
 
-if ($call ne '' && $call =~ /^[A-Z0-9\/\-]+$/) {
-    # si no existe, lo creamos y volcamos memoria la primera vez
-    _ensure_badnode_local_from_mem();
+# ---------------- local side-effect ----------------
 
-    my $fn = localdata("badnode.local");
-    if (defined $fn && length $fn && -e $fn) {
-        _remove_call($fn, $call);
+if ($call ne '' && $call =~ /^[A-Z0-9\/\-]+$/) {
+
+    if (defined $suffix && length $suffix) {
+        # explicit suffix: ensure file exists and remove there
+        _ensure_badnode_file_from_mem($suffix);
+        my $fn = localdata("badnode.$suffix");
+        _remove_call($fn, $call) if defined $fn && length $fn && -e $fn;
+
+    } else {
+        # no suffix: remove from ALL badnode.* files
+        my @files = _scan_badnode_files();
+
+        if (@files) {
+            for my $fn (@files) {
+                _remove_call($fn, $call);
+            }
+        } else {
+            # fallback: historical behavior (ensure local exists, then remove there)
+            _ensure_badnode_file_from_mem('local');
+            my $fn = localdata("badnode.local");
+            _remove_call($fn, $call) if defined $fn && length $fn && -e $fn;
+        }
     }
 }
 
