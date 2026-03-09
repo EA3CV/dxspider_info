@@ -12,14 +12,14 @@
 #    Save as: /spider/local_cmd/mnodes.pl
 #
 #  Author   : Kin EA3CV ea3cv@cronux.net
-#  Version  : 20250608 v1.9
+#  Version  : 20260308 v1.10
 #
 
 use strict;
 use warnings;
 
 my ($self, $line) = @_;
-return 1 unless $self->priv >= 5;
+return 1 unless $self->priv >= 1;
 
 my $now = time();
 my $localcall = $main::mycall;
