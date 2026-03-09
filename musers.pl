@@ -12,14 +12,14 @@
 #    Save as: /spider/local_cmd/musers.pl
 #
 #  Author   : Kin EA3CV (ea3cv@cronux.net)
-#  Version  : 20250608 v1.7
+#  Version  : 20260308 v1.8
 #
 
 use strict;
 use warnings;
 
 my $self = shift;
-return 1 unless $self->priv >= 5;
+return 1 unless $self->priv >= 1;
 
 my $tnow = time();
 my @out = (
