@@ -13,6 +13,12 @@
 # Include the following line in the crontab:
 # 0 4 * * 1,2,3,4,5 run_cmd("check_build <Y/N> <num_backups>")
 #
+# Clone DXSpider Mojo branch:
+# git clone -b mojo git://scm.dxcluster.org/spider /spider
+#
+# Backup/old clone URL:
+# git clone -b mojo git://scm.dxcluster.org/scm/spider /spider
+#
 # If you want to keep the check_build.pl tool up to date tool,
 # add the following to your dxspider crontab (Thanks for the idea Keith G6NHU):
 # 30 0 * * * spawn('cd /spider/local_cmd; wget -q https://raw.githubusercontent.com/EA3CV/dxspider_info/main/check_build.pl -O /spider/local_cmd/check_build.pl')
@@ -20,7 +26,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250130 v1.15
+# 20260604 v1.16
 #
 
 use DXDebug;
@@ -38,12 +44,20 @@ return 1 unless $self->{priv} >= 9;
 my @out;
 my $res;
 
+# DXSpider Git repository
+my $git_remote_url = 'git://scm.dxcluster.org/spider';
+# my $git_remote_url = 'git://scm.dxcluster.org/scm/spider'; # old/backup URL
 
 # Change the working directory to /spider
 chdir "$main::root";
 push @out, "Verifying ...";
 
-system('git remote update');
+# Ensure origin uses the current DXSpider repository URL
+system('git', 'remote', 'set-url', 'origin', $git_remote_url) == 0
+        or die push @out, "Failed to set Git remote URL: $!";
+
+system('git remote update') == 0
+        or die push @out, "Failed to update Git remote: $!";
 
 my $local_repo = `git rev-parse \@`;
 my $remote_repo = `git rev-parse \@{u}`;
@@ -62,7 +76,7 @@ if ($local_repo ne $remote_repo) {
                 my $date = sprintf('%04d%02d%02d.%02d%02d%02d', $year, $mon, $mday, $hour, $min, $sec);
                 my $backup_dir = "../spider.backup";
                 unless (-d $backup_dir) {
-                mkdir $backup_dir;
+                        mkdir $backup_dir;
                 }
 
                 my $load = "*$self->{mycall}*   💾  *Backup Starts*";
@@ -99,6 +113,7 @@ if ($local_repo ne $remote_repo) {
         }
 
         chdir "$main::root";
+
         # Reset and update the Git repository
         system('git reset --hard origin/mojo') == 0 or die push @out,"Failed to reset Git repository: $!";
         system('git pull') == 0 or die push @out,"Failed to pull updates from Git repository: $!";
