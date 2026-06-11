@@ -23,7 +23,7 @@
 #    From crontab (e.g., every 10 minutes):
 #      00,10,20,30,40,50 * * * * run_cmd("set/update_ip 192.168.1.100 172.18.0.3")
 #
-#    ⚠️ Only local IP addresses (not public) should be passed as arguments.
+#    Only local IP addresses (not public) should be passed as arguments.
 #
 #  Installation:
 #    Save as: /spider/local_cmd/set/update_ip.pl
@@ -32,26 +32,116 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20250410 v1.11
+#  Version : 20260611 v1.12
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
+#
+#  Compatibility:
+#    Local IP detection follows the DXAudit hostname-only logic:
+#      1) Try hostname -I and accept only valid IP addresses.
+#      2) If no valid IP is found, try hostname -i for BusyBox/Alpine.
+#      3) Do not use ip addr, to avoid adding fe80:: link-local addresses.
 #
 
 use strict;
 use warnings;
 
 my ($self, $line) = @_;
-my @custom = split(/\s+/, $line);
+my @custom = split(/\s+/, $line || "");
 my @out;
 
-# Obtener IPv4 e IPv6 públicas por separado
-my $pub_ipv4 = `curl -4 -s ifconfig.me`; chomp($pub_ipv4);
-my $pub_ipv6 = `curl -6 -s ifconfig.me`; chomp($pub_ipv6);
+sub trim {
+    my $v = shift;
+    return "" unless defined $v;
+    $v =~ s/^\s+|\s+$//g;
+    return $v;
+}
+
+sub is_ipv4 {
+    my $ip = shift;
+    return 0 unless defined $ip;
+    return $ip =~ /^(?:\d{1,3}\.){3}\d{1,3}$/ ? 1 : 0;
+}
+
+sub is_ipv6 {
+    my $ip = shift;
+    return 0 unless defined $ip;
+    return $ip =~ /:/ ? 1 : 0;
+}
+
+sub ipv4_octets {
+    my $ip = shift;
+    return () unless is_ipv4($ip);
+    my @o = split /\./, $ip;
+    return () unless @o == 4;
+    for my $x (@o) {
+        return () unless $x =~ /^\d+$/ && $x >= 0 && $x <= 255;
+    }
+    return @o;
+}
+
+sub is_valid_ip {
+    my $ip = trim(shift);
+    return 0 unless defined $ip && $ip ne "";
+
+    if (is_ipv4($ip)) {
+        my @o = ipv4_octets($ip);
+        return @o == 4 ? 1 : 0;
+    }
+
+    return 1 if is_ipv6($ip);
+    return 0;
+}
+
+sub add_ips_from_text {
+    my ($seen, $txt) = @_;
+    my $added = 0;
+
+    for my $ip (split /\s+/, $txt || "") {
+        $ip = trim($ip);
+        next unless $ip ne "";
+        next unless is_valid_ip($ip);
+
+        $seen->{$ip} = 1;
+        $added++;
+    }
+
+    return $added;
+}
+
+sub detect_local_ips {
+    my %seen;
+
+    # Always include loopback.
+    $seen{"127.0.0.1"} = 1;
+    $seen{"::1"} = 1;
+
+    # GNU hostname. BusyBox may print usage text, so only valid IPs count.
+    my $out = `hostname -I 2>/dev/null`;
+    my $added = add_ips_from_text(\%seen, $out);
+
+    # BusyBox / Alpine fallback. Use only if hostname -I gave no valid IPs.
+    if (!$added) {
+        $out = `hostname -i 2>/dev/null`;
+        add_ips_from_text(\%seen, $out);
+    }
+
+    return sort keys %seen;
+}
+
+# Get public IPv4 and IPv6 separately.
+my $pub_ipv4 = `curl -4 -s ifconfig.me 2>/dev/null`;
+chomp($pub_ipv4);
+$pub_ipv4 = trim($pub_ipv4);
+
+my $pub_ipv6 = `curl -6 -s ifconfig.me 2>/dev/null`;
+chomp($pub_ipv6);
+$pub_ipv6 = trim($pub_ipv6);
 
 # --- IPv4 ---
 my $old_ipv4 = $main::localhost_alias_ipv4 || '';
-if ($pub_ipv4 =~ /^[\d\.]+$/) {
+if (is_ipv4($pub_ipv4)) {
     if ($pub_ipv4 ne $old_ipv4) {
         $main::localhost_alias_ipv4 = $pub_ipv4;
         push @out, "\nPublic IPv4 change: $pub_ipv4 (previous $old_ipv4)";
@@ -64,7 +154,7 @@ if ($pub_ipv4 =~ /^[\d\.]+$/) {
 
 # --- IPv6 ---
 my $old_ipv6 = $main::localhost_alias_ipv6 || '';
-if ($pub_ipv6 =~ /:/) {
+if (is_ipv6($pub_ipv6)) {
     if ($pub_ipv6 ne $old_ipv6) {
         $main::localhost_alias_ipv6 = $pub_ipv6;
         push @out, "Public IPv6 change: $pub_ipv6 (previous $old_ipv6)";
@@ -76,20 +166,15 @@ if ($pub_ipv6 =~ /:/) {
 }
 
 # --- Local IPs ---
-my @system_ips = qw(127.0.0.1 ::1);
+my @system_detected = detect_local_ips();
 
-my $hostname_ips = `hostname -I`;
-my @system_detected = split(/\s+/, $hostname_ips);
-chomp(@system_detected);
-
-# Eliminar duplicados globalmente
-my %seen;
-my @detected_unique = grep { $_ ne '' && !$seen{$_}++ } @system_detected;
-my @custom_sorted = sort @custom;
+# Only valid local IPs passed as arguments are accepted.
+my @custom_valid = grep { is_valid_ip($_) } map { trim($_) } @custom;
+my @custom_sorted = sort @custom_valid;
 
 my %ip_seen;
 my @new_list = grep { $_ ne '' && !$ip_seen{$_}++ }
-               (@system_ips, @detected_unique, @custom_sorted);
+               (@system_detected, @custom_sorted);
 
 my @old_list = @main::localhost_names;
 my %old_map = map { $_ => 1 } @old_list;
@@ -102,36 +187,32 @@ if (@added || @removed) {
     @main::localhost_names = @new_list;
     my $joined = join(' ', @new_list);
     push @out, "Local IPs changes: $joined";
+    push @out, "Added: " . join(' ', @added) if @added;
+    push @out, "Removed: " . join(' ', @removed) if @removed;
 } else {
     my $joined = join(' ', @new_list);
     push @out, "No local IPs change: $joined";
 }
 
-# --- Actualizar el fichero /spider/scripts/startup ---
+# --- Update /spider/scripts/startup ---
 my $startup_file = '/spider/scripts/startup';
 
-# Leer líneas existentes
 open(my $in, '<', $startup_file) or die "Cannot open $startup_file: $!";
 my @lines = <$in>;
 close($in);
 
-# Crear nueva configuración
-my $ipv4_line   = "set/var \$main::localhost_alias_ipv4 = '$main::localhost_alias_ipv4';\n";
-my $ipv6_line   = "set/var \$main::localhost_alias_ipv6 = '$main::localhost_alias_ipv6';\n";
-my $names_line  = "set/var \@main::localhost_names = qw(@main::localhost_names);\n";
+my $ipv4_line  = "set/var \$main::localhost_alias_ipv4 = '$main::localhost_alias_ipv4';\n";
+my $ipv6_line  = "set/var \$main::localhost_alias_ipv6 = '$main::localhost_alias_ipv6';\n";
+my $names_line = "set/var \@main::localhost_names = qw(@main::localhost_names);\n";
 
-# Filtrar líneas previas de esas variables
 @lines = grep {
     !/\$main::localhost_alias_ipv4/ &&
     !/\$main::localhost_alias_ipv6/ &&
     !/\@main::localhost_names/
 } @lines;
 
-# Insertar nuevas líneas consecutivas al final
-#push @lines, "\n# Updated localhost IP definitions\n", $ipv4_line, $ipv6_line, $names_line;
 push @lines, $ipv4_line, $ipv6_line, $names_line;
 
-# Escribir el fichero actualizado
 open(my $out_fh, '>', $startup_file) or die "Cannot write to $startup_file: $!";
 print $out_fh @lines;
 close($out_fh);
