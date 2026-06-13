@@ -18,7 +18,7 @@
 #
 # EA3CV Kin <ea3cv@cronux.net>
 #
-# 20260611 v1.6
+# 20260612 v1.7
 #
 
 use strict;
@@ -799,17 +799,56 @@ sub key_exists {
     return -r $KEY_FILE && -r $PUB_FILE;
 }
 
+sub openssl_supports_ed25519 {
+    return 0 unless have_openssl();
+
+    my $tmp_key = "$AUDIT_DIR/audit.test.ed25519.key.$$";
+    my $tmp_msg = "$AUDIT_DIR/audit.test.ed25519.msg.$$";
+    my $tmp_sig = "$AUDIT_DIR/audit.test.ed25519.sig.$$";
+
+    unlink $tmp_key if -e $tmp_key;
+    unlink $tmp_msg if -e $tmp_msg;
+    unlink $tmp_sig if -e $tmp_sig;
+
+    my $ok = 0;
+
+    my $cmd1 = "openssl genpkey -algorithm ED25519 -out '$tmp_key' >/dev/null 2>&1";
+    system($cmd1);
+
+    if ($? == 0 && write_file($tmp_msg, "dxspider-audit-ed25519-test", 0600)) {
+        my $cmd2 = "openssl pkeyutl -sign -rawin -inkey '$tmp_key' -in '$tmp_msg' -out '$tmp_sig' >/dev/null 2>&1";
+        system($cmd2);
+        $ok = 1 if $? == 0 && -s $tmp_sig;
+    }
+
+    unlink $tmp_key if -e $tmp_key;
+    unlink $tmp_msg if -e $tmp_msg;
+    unlink $tmp_sig if -e $tmp_sig;
+
+    return $ok;
+}
+
 sub generate_keypair {
     return 0 unless have_openssl();
 
     unlink $KEY_FILE if -e $KEY_FILE;
     unlink $PUB_FILE if -e $PUB_FILE;
 
-    # RSA is used for new/rekeyed clients because it is supported by
-    # OpenSSL 1.1.1 and OpenSSL 3.x from the command line.
-    # Existing Ed25519 keys are still supported by sign_payload() where
-    # the local OpenSSL version can sign them.
-    my $cmd1 = "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out '$KEY_FILE' >/dev/null 2>&1";
+    my ($cmd1, $key_alg);
+
+    # Preferred behaviour:
+    #   - Use Ed25519 when the local OpenSSL command line can generate and sign it.
+    #   - Fall back to RSA only for compatibility with older systems.
+    #
+    # This avoids forcing RSA on modern OpenSSL 3.x installations.
+    if (openssl_supports_ed25519()) {
+        $key_alg = "Ed25519";
+        $cmd1 = "openssl genpkey -algorithm ED25519 -out '$KEY_FILE' >/dev/null 2>&1";
+    } else {
+        $key_alg = "RSA";
+        $cmd1 = "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out '$KEY_FILE' >/dev/null 2>&1";
+    }
+
     my $cmd2 = "openssl pkey -in '$KEY_FILE' -pubout -out '$PUB_FILE' >/dev/null 2>&1";
 
     system($cmd1);
@@ -821,7 +860,7 @@ sub generate_keypair {
     chmod 0600, $KEY_FILE;
     chmod 0644, $PUB_FILE;
 
-    audit_log("generated local RSA keypair");
+    audit_log("generated local $key_alg keypair");
 
     return 1;
 }
@@ -830,11 +869,20 @@ sub private_key_type {
     return undef unless have_openssl();
     return undef unless -r $KEY_FILE;
 
-    my $out = `openssl pkey -in '$KEY_FILE' -text -noout 2>/dev/null | head -1`;
+    my $out = `openssl pkey -in '$KEY_FILE' -text -noout 2>/dev/null`;
     $out = trim($out);
 
     return "Ed25519" if defined $out && $out =~ /ED25519/i;
-    return "RSA"     if defined $out && $out =~ /RSA/i;
+
+    # OpenSSL often prints RSA keys starting with:
+    #   Private-Key: (2048 bit, 2 primes)
+    # and not with the literal string "RSA" on the first line.
+    return "RSA" if defined $out && (
+        $out =~ /RSA/i ||
+        $out =~ /Private-Key:\s*\(\d+\s+bit/i ||
+        $out =~ /modulus:/i ||
+        $out =~ /privateExponent:/i
+    );
 
     return undef;
 }
@@ -1088,7 +1136,7 @@ sub send_report {
         return {
             ok => jbool(0),
             status => "SIGN_FAILED",
-            message => "cannot sign report; Ed25519 requires OpenSSL 3.x or RSA compatibility rekey"
+            message => "cannot sign report; check local OpenSSL key support and audit.debug"
         };
     }
 
