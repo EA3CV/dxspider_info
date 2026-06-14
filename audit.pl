@@ -18,7 +18,7 @@
 #
 # EA3CV Kin <ea3cv@cronux.net>
 #
-# 20260612 v1.7
+# 20260614 v1.8
 #
 
 use strict;
@@ -413,6 +413,26 @@ sub is_public_ip {
     return 0;
 }
 
+
+sub is_link_local_ip {
+    my $ip = trim(shift);
+    return 0 unless defined $ip && $ip ne "";
+
+    if (is_ipv4($ip)) {
+        my @o = ipv4_octets($ip);
+        return 1 if @o == 4 && $o[0] == 169 && $o[1] == 254;
+        return 0;
+    }
+
+    if (is_ipv6($ip)) {
+        my $l = lc $ip;
+        return 1 if $l =~ /^fe[89ab][0-9a-f]*:/; # fe80::/10 link-local
+        return 0;
+    }
+
+    return 0;
+}
+
 sub add_ips_from_text {
     my ($seen, $txt) = @_;
     my $added = 0;
@@ -470,6 +490,7 @@ sub collect_localhost_alias {
     for my $ip (@system_ips) {
         next if $ip eq "127.0.0.1";
         next if $ip eq "::1";
+        next if is_link_local_ip($ip);
         next if $names{$ip};
         push @missing, $ip;
     }
