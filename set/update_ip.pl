@@ -13,6 +13,7 @@
 #    It logs and shows changes:
 #      - Public IP changes (IPv4 or IPv6)
 #      - Local IP additions/removals
+#      - Runtime normalisation of @main::localhost_names, including duplicate removal
 #
 #  Usage:
 #    From DXSpider shell (as a self command):
@@ -32,7 +33,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20260613 v1.14
+#  Version : 20260616 v1.15
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -45,6 +46,7 @@
 #      4) Keep IPv4, IPv6 global and IPv6 ULA addresses.
 #      5) Ignore IPv6 link-local fe80::/10, multicast ff00::/8 and unspecified ::.
 #      6) Create a timestamped backup before updating /spider/scripts/startup.
+#      7) Keep only the latest 5 dxaudit startup backups.
 #
 
 use strict;
@@ -232,6 +234,32 @@ sub detect_local_ips {
     return sort keys %seen;
 }
 
+sub prune_startup_backups {
+    my ($startup_file, $keep) = @_;
+    $keep ||= 5;
+
+    my $pattern = $startup_file . '.dxaudit-backup-*';
+    my @backups = grep { -f $_ } glob($pattern);
+
+    return 0 if @backups <= $keep;
+
+    # Newest first by modification time, fallback to filename for deterministic order.
+    @backups = sort {
+        ((stat($b))[9] || 0) <=> ((stat($a))[9] || 0) || $b cmp $a
+    } @backups;
+
+    my @remove = @backups[$keep .. $#backups];
+    my $removed = 0;
+
+    for my $file (@remove) {
+        if (unlink $file) {
+            $removed++;
+        }
+    }
+
+    return $removed;
+}
+
 # Get public IPv4 and IPv6 separately.
 my $pub_ipv4 = `curl -4 -s ifconfig.me 2>/dev/null`;
 chomp($pub_ipv4);
@@ -285,14 +313,24 @@ my %new_map = map { $_ => 1 } @new_list;
 my @added   = grep { !$old_map{$_} } @new_list;
 my @removed = grep { !$new_map{$_} } @old_list;
 
+my %old_count;
+$old_count{$_}++ for @old_list;
+my @duplicates = sort grep { $old_count{$_} > 1 } keys %old_count;
+
+# Always normalise the runtime variable, even when there are no logical
+# additions/removals. This removes duplicates already loaded in memory and keeps
+# sh/var consistent with what is written to /spider/scripts/startup.
+@main::localhost_names = @new_list;
+
+my $joined = join(' ', @new_list);
 if (@added || @removed) {
-    @main::localhost_names = @new_list;
-    my $joined = join(' ', @new_list);
     push @out, "Local IPs changes: $joined";
     push @out, "Added: " . join(' ', @added) if @added;
     push @out, "Removed: " . join(' ', @removed) if @removed;
+} elsif (@duplicates) {
+    push @out, "Local IPs normalised: $joined";
+    push @out, "Removed duplicate entries: " . join(' ', @duplicates);
 } else {
-    my $joined = join(' ', @new_list);
     push @out, "No local IPs change: $joined";
 }
 
@@ -315,6 +353,9 @@ if (-e $startup_file) {
     } else {
         push @out, "WARNING: cannot read startup file for backup: $startup_file";
     }
+
+    my $removed_backups = prune_startup_backups($startup_file, 5);
+    push @out, "Old backups removed: $removed_backups" if $removed_backups;
 }
 
 open(my $in, '<', $startup_file) or die "Cannot open $startup_file: $!";
