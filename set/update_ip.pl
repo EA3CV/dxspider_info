@@ -33,7 +33,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20260616 v1.15
+#  Version : 20260617 v1.17
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -197,12 +197,24 @@ sub collect_ips_from_ip_addr {
     my $added = 0;
 
     for my $line (split /\n/, $out) {
-        if ($line =~ /\binet6?\s+([0-9A-Fa-f:.]+)\//) {
+        # Normal address or point-to-point local address:
+        #   inet 192.168.2.10/32 ...
+        #   inet 192.168.2.18 peer 192.168.2.1/32 ...
+        if ($line =~ /\binet6?\s+([0-9A-Fa-f:.]+)(?:\/|\s+peer\s+)/) {
             my $ip = trim($1);
-            next unless is_valid_local_ip($ip);
+            if (is_valid_local_ip($ip)) {
+                $seen->{$ip} = 1;
+                $added++;
+            }
+        }
 
-            $seen->{$ip} = 1;
-            $added++;
+        # Point-to-point peer address (Fedora/slip/tunnel/etc.)
+        if ($line =~ /\speer\s+([0-9A-Fa-f:.]+)\//) {
+            my $peer = trim($1);
+            if (is_valid_local_ip($peer)) {
+                $seen->{$peer} = 1;
+                $added++;
+            }
         }
     }
 
