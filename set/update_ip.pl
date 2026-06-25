@@ -33,7 +33,7 @@
 #    - Internet access to detect public IPs (via curl)
 #
 #  Author  : Kin EA3CV (ea3cv@cronux.net)
-#  Version : 20260617 v1.17
+#  Version : 20260625 v1.20
 #
 #  Note:
 #    Designed to prevent loss of SPOTS/ANN due to incorrect IPs.
@@ -53,7 +53,7 @@ use strict;
 use warnings;
 
 my ($self, $line) = @_;
-my @custom = split(/\s+/, $line || "");
+my @custom = grep { length } split /\s+/, trim($line || "");
 my @out;
 
 sub trim {
