@@ -15,7 +15,7 @@
 #
 # Kin EA3CV <ea3cv@cronux.net>
 #
-# 20260116 v1.3
+# 20260705 v1.5
 #
 
 use strict;
@@ -90,10 +90,8 @@ sub _ensure_badnode_local {
     my $fn = localdata("badnode.local");
     return (0, 0) unless defined $fn && length $fn;
 
-    # If it exists, do nothing
     return (1, 0) if -e $fn;
 
-    # Create it from current in-memory nodes snapshot
     my @nodes = sort keys %{ $mem_href || {} };
 
     if (open(my $fh, '>', $fn)) {
@@ -105,7 +103,6 @@ sub _ensure_badnode_local {
         return (1, scalar(@nodes));
     }
 
-    # Non-fatal: continue normal execution even if we can't create it
     return (0, 0);
 }
 
@@ -113,15 +110,12 @@ sub _read_all_disk_nodes {
     my %seen;
     my @all;
 
-    # 1) Base list: badnode.new
     my $newfn = localdata("badnode.new");
     for my $n (_read_list_file($newfn)) {
         next if $seen{$n}++;
         push @all, $n;
     }
 
-    # 2) Extra lists: any badnode.* in local_data (except .new, .run)
-    #    NOTE: badnode.local IS intentionally included here.
     eval {
         my $dir;
         opendir($dir, $main::local_data) or die "opendir($main::local_data): $!";
@@ -157,7 +151,8 @@ sub _write_badnode_hashfile {
         my $v = $href->{$k};
         next unless defined $v && $v =~ /^\d+$/;
 
-        my $key_out = ($k =~ /^[A-Z0-9]+$/) ? $k : "'" . $k . "'";
+        # v1.4: always quote keys for compatibility with modern Perl
+        my $key_out = "'" . $k . "'";
         print $fh "  $key_out => $v,\n";
     }
 
@@ -172,20 +167,15 @@ sub _write_badnode_hashfile {
 
 my $bn = _badnode_obj();
 
-# 1) Snapshot memory BEFORE rebuild
 my %mem = _mem_nodes_hash($bn);
 my $before_mem = scalar keys %mem;
 
-# 1b) Ensure badnode.local exists (create it from memory snapshot if missing)
 my ($ok_local, $created_n) = _ensure_badnode_local(\%mem);
 push @out, "Created badnode.local from memory: $created_n" if $ok_local && $created_n;
 
-# 2) Read disk sources (badnode.new + badnode.local + badnode.*)
 my @disk_nodes = _read_all_disk_nodes();
 my $loaded_from_disk = scalar @disk_nodes;
 
-# 3) Build final set ONLY from disk.
-#    Preserve old timestamps for entries that still exist; new entries get "now".
 my %final;
 my $now = time;
 
@@ -194,7 +184,6 @@ for my $n (@disk_nodes) {
     $final{$n} = exists $mem{$n} ? $mem{$n} : $now;
 }
 
-# 4) Replace in-memory DXProt::badnode content (purge removed entries)
 if ($bn && ref($bn) eq 'DXHash') {
     for my $k (keys %{$bn}) {
         delete $bn->{$k} unless $k eq 'name';
@@ -205,10 +194,8 @@ if ($bn && ref($bn) eq 'DXHash') {
     $bn->{name} = 'badnode';
 }
 
-# 5) Write local_data/badnode in the correct dumped format
 _write_badnode_hashfile('badnode', \%final);
 
-# 6) Counters
 my $final_total = scalar keys %final;
 my $removed = $before_mem - $final_total; $removed = 0 if $removed < 0;
 my $added   = $final_total - $before_mem; $added   = 0 if $added   < 0;
