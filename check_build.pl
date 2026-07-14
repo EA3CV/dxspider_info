@@ -84,7 +84,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260714 v1.23
+# 20260714 v1.25
 #
 
 use DXDebug;
@@ -92,6 +92,7 @@ use DXLog ();
 use strict;
 use warnings;
 use Fcntl qw(:flock);
+use Cwd qw(realpath);
 
 my ($self, $line) = @_;
 
@@ -108,6 +109,11 @@ if (defined $args[1] && $args[1] =~ /\A\d+\z/ && $args[1] > 0) {
     $max_copies = int($args[1]);
 }
 
+my $requested_backup_dir =
+    defined $args[2] && length $args[2]
+        ? $args[2]
+        : undef;
+
 my @out;
 
 my $git_remote_name = 'origin';
@@ -116,10 +122,10 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260714-v1.23');
+report($self, \@out, 'SCRIPT BUILD : 20260714-v1.25');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.23');
+report($self, \@out, 'DXSpider Build Checker v1.25');
 report($self, \@out, "Repository : $git_remote_url");
 report($self, \@out, "Branch     : $git_branch");
 report($self, \@out, "Root       : " . (defined $main::root ? $main::root : '(undefined)'));
@@ -147,20 +153,46 @@ unless (defined $main::root && -d $main::root) {
     );
 }
 
-report($self, \@out, "  OK  DXSpider root found: $main::root");
+my $configured_root = $main::root;
+my $real_root = realpath($configured_root);
 
-my $backup_dir = "$main::root.backup";
-
-report($self, \@out, 'Changing to DXSpider working directory ...');
-
-unless (chdir $main::root) {
+unless (defined $real_root && -d $real_root) {
     return failure(
-        $self, \@out,
-        "Cannot change directory to $main::root: $!"
+        $self,
+        \@out,
+        "Cannot resolve the real DXSpider installation path from " .
+        "'$configured_root'."
     );
 }
 
-report($self, \@out, "  OK  Working directory: $main::root");
+report($self, \@out, "  OK  Configured root: $configured_root");
+report($self, \@out, "  OK  Resolved root:   $real_root");
+
+my ($backup_dir, $backup_dir_error) =
+    resolve_backup_dir($real_root, $requested_backup_dir);
+
+if ($backup_requested && !defined $backup_dir) {
+    return failure(
+        $self,
+        \@out,
+        "Cannot select a writable backup directory: $backup_dir_error"
+    );
+}
+
+if ($backup_requested) {
+    report($self, \@out, "Selected backup directory: $backup_dir");
+}
+
+report($self, \@out, 'Changing to DXSpider working directory ...');
+
+unless (chdir $real_root) {
+    return failure(
+        $self, \@out,
+        "Cannot change directory to $real_root: $!"
+    );
+}
+
+report($self, \@out, "  OK  Working directory: $real_root");
 report($self, \@out, 'Checking Git working tree ...');
 
 my ($inside_work_tree, $inside_status) =
@@ -169,7 +201,7 @@ my ($inside_work_tree, $inside_status) =
 unless ($inside_status == 0 && $inside_work_tree eq 'true') {
     return failure(
         $self, \@out,
-        "$main::root is not a valid Git working tree."
+        "$real_root is not a valid Git working tree."
     );
 }
 
@@ -320,7 +352,7 @@ if ($backup_requested) {
     report($self, \@out, 'Backup requested.');
 
     unless (create_backup(
-        root        => $main::root,
+        root        => $real_root,
         backup_dir  => $backup_dir,
         max_copies  => $max_copies,
         self        => $self,
@@ -490,6 +522,74 @@ DXCron::run_cmd('shut');
 # The report was already sent directly. Avoid returning it a second time if
 # shutdown processing allows this command to return.
 return 1;
+
+
+sub resolve_backup_dir
+{
+    my ($root, $requested) = @_;
+
+    my @candidates;
+
+    if (defined $requested && length $requested) {
+        push @candidates, $requested;
+    }
+    else {
+        push @candidates, "$root.backup";
+
+        my $home = (getpwuid($<))[7];
+
+        if (defined $home && length $home && -d $home) {
+            my $home_candidate = "$home/spider.backup";
+
+            push @candidates, $home_candidate
+                unless grep { $_ eq $home_candidate } @candidates;
+        }
+    }
+
+    my @errors;
+
+    for my $dir (@candidates) {
+        unless (defined $dir && $dir =~ m{\A/}) {
+            push @errors, "'$dir' is not an absolute path";
+            next;
+        }
+
+        if (-e $dir && !-d $dir) {
+            push @errors, "'$dir' exists but is not a directory";
+            next;
+        }
+
+        if (-d $dir) {
+            return ($dir, undef) if -r $dir && -w $dir && -x $dir;
+
+            push @errors, "'$dir' is not readable, writable and searchable";
+            next;
+        }
+
+        my $parent = $dir;
+        $parent =~ s{/+[^/]+\z}{};
+        $parent = '/' unless length $parent;
+
+        unless (-d $parent) {
+            push @errors, "parent directory '$parent' does not exist";
+            next;
+        }
+
+        unless (-w $parent && -x $parent) {
+            push @errors, "parent directory '$parent' is not writable/searchable";
+            next;
+        }
+
+        return ($dir, undef);
+    }
+
+    return (
+        undef,
+        @errors
+            ? join('; ', @errors)
+            : 'no backup directory candidates were available'
+    );
+}
 
 
 sub create_backup
