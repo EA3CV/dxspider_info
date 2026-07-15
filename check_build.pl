@@ -67,9 +67,9 @@
 #
 #   0 4 * * * run_cmd('check_build <Y/N> <num_backups> [backup_directory]')
 #
-# Example: create a backup and retain the 5 newest backup archives:
+# Example: create a backup and retain the 10 newest backup archives:
 #
-#   0 4 * * * run_cmd('check_build Y 5')
+#   0 4 * * * run_cmd('check_build Y 10')
 #
 # Initial DXSpider Mojo clone:
 #
@@ -99,7 +99,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260715 v1.26
+# 20260715 v1.27
 #
 
 use DXDebug;
@@ -137,10 +137,10 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260714-v1.26');
+report($self, \@out, 'SCRIPT BUILD : 20260714-v1.27');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.26');
+report($self, \@out, 'DXSpider Build Checker v1.27');
 report($self, \@out, "Repository : $git_remote_url");
 report($self, \@out, "Branch     : $git_branch");
 report($self, \@out, "Root       : " . (defined $main::root ? $main::root : '(undefined)'));
@@ -355,7 +355,10 @@ if (!$synchronization_required) {
 
     dbg('DXCron::spawn: repository already synchronized')
         if isdbg('cron');
-    return 1;
+
+    # No shutdown occurs in this path, so return the accumulated output
+    # normally and let DXCommandmode display it in the console.
+    return (1, @out);
 }
 
 report($self, \@out, '');
@@ -864,4 +867,4 @@ sub is_tg
 
     return $result;
 }
-    
+ 
