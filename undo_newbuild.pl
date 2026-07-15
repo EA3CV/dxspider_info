@@ -3,7 +3,7 @@
 #
 # Restore the DXSpider installation from a backup created by check_build.pl.
 #
-# This command is the rollback companion for check_build.pl v1.33 or later.
+# This command is the rollback companion for check_build.pl v1.26 or later.
 # It restores the complete installation snapshot that existed immediately
 # before the update.
 #
@@ -36,15 +36,11 @@
 #   - The archive must have been created by check_build.pl.
 #   - The archive is validated before any production file is modified.
 #   - The archive is extracted to a temporary staging directory first.
-#   - Runtime data excluded by check_build.pl is preserved:
+#   - The complete local_data directory is preserved and is never restored
+#     while DXSpider is running. This includes databases, logs, spots and
+#     all other live runtime data.
 #
-#       local_data/debug
-#       local_data/log
-#       local_data/spots
-#       local_data/wwv
-#       local_data/wcy
-#
-#   - All other files are restored to their state at backup time.
+#   - All files outside local_data are restored to their state at backup time.
 #   - Files created after the backup, outside the excluded runtime paths,
 #     are removed by rsync --delete.
 #   - Every step is written to the DXSpider logs under the category:
@@ -60,7 +56,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260714 v1.3
+# 20260715 v1.5
 #
 
 use 5.10.1;
@@ -81,12 +77,12 @@ my $requested_archive = $args[0];
 
 my @out;
 
-my $script_build = '20260714-v1.3';
+my $script_build = '20260714-v1.5';
 my $lock_file    = '/tmp/dxspider-undo-newbuild.lock';
 
 report(\@out, "SCRIPT BUILD : $script_build");
 report(\@out, '------------------------------------------------------------');
-report(\@out, 'DXSpider Build Rollback v1.3');
+report(\@out, 'DXSpider Build Rollback v1.5');
 report(\@out, '------------------------------------------------------------');
 report(\@out, '');
 report(\@out, 'Starting rollback validation ...');
@@ -338,7 +334,7 @@ report(\@out, "Current branch : $current_branch");
 report(\@out, "Current commit : $current_commit");
 report(\@out, '');
 report(\@out, 'Rollback will now restore the selected snapshot.');
-report(\@out, 'Runtime data directories will be preserved.');
+report(\@out, 'The complete local_data directory will be preserved.');
 
 my $node_call =
     defined $main::mycall && length $main::mycall
@@ -347,14 +343,23 @@ my $node_call =
 
 is_tg("*$node_call*   Rollback Starts");
 
+# Never overwrite live runtime data. In particular, replacing an open
+# SQLite database can leave DXSpider unable to write during shutdown.
 my @exclude = (
-    '--exclude=local_data/debug',
-    '--exclude=local_data/log',
-    '--exclude=local_data/spots',
-    '--exclude=local_data/wwv',
-    '--exclude=local_data/wcy'
+    '--exclude=local_data/'
 );
 
+unless (-d "$root/local_data") {
+    cleanup_staging($staging_dir);
+
+    return failure(
+        \@out,
+        "Safety check failed: '$root/local_data' does not exist. " .
+        "Rollback cancelled to avoid an unsafe restore."
+    );
+}
+
+report(\@out, 'Safety check: live local_data will not be modified.');
 report(\@out, 'Restoring snapshot with rsync ...');
 
 my $rsync_status = system(
@@ -651,15 +656,17 @@ sub cleanup_staging
 
     return 1 unless defined $directory && -e $directory;
 
-    my $errors = [];
+    my $errors;
 
     remove_tree(
         $directory,
         {
             safe  => 1,
-            error => $errors
+            error => \$errors
         }
     );
+
+    return 1 unless defined $errors && ref($errors) eq 'ARRAY';
 
     return @$errors ? 0 : 1;
 }
