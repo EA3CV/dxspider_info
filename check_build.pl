@@ -18,23 +18,38 @@
 #
 # Backup options:
 #
-#   check_build <Y/N> <num_backups>
+#   check_build <Y/N> <num_backups> [backup_directory]
 #
-#   Y              Create a backup before updating.
-#   N              Update without creating a backup.
-#   num_backups    Maximum number of backup archives to retain.
-#                  The default is 10.
+#   Y                  Create a backup before updating.
+#   N                  Update without creating a backup.
+#   num_backups        Maximum number of backup archives to retain.
+#                      The default is 10.
+#   backup_directory   Optional explicit backup directory.
 #
-# The backup directory is created at the same filesystem level as the
-# DXSpider installation directory.
+# Backup directory selection:
 #
-# Examples:
+#   The script first resolves the real filesystem path of $main::root.
+#   This works whether the configured root is a real directory or a
+#   symbolic link.
 #
-#   DXSpider root:  /spider
-#   Backup path:    /spider.backup
+#   Examples:
 #
-#   DXSpider root:  /opt/dxspider/spider
-#   Backup path:    /opt/dxspider/spider.backup
+#       /spider -> /home/sysop/spider
+#       backup  -> /home/sysop/spider.backup
+#
+#       /home/sysop/spider
+#       backup  -> /home/sysop/spider.backup
+#
+#   Selection order:
+#
+#   1. Use the explicit backup_directory argument, when supplied.
+#   2. Otherwise, try a directory beside the resolved installation path.
+#   3. If the process user cannot create or write that directory, use:
+#
+#          <process-user-home>/spider.backup
+#
+#      The process user home is obtained from getpwuid($<); it is not
+#      assumed to be /home/sysop and root privileges are not required.
 #
 # Required system packages:
 #
@@ -50,7 +65,7 @@
 #
 # Suggested DXSpider crontab entry:
 #
-#   0 4 * * * run_cmd('check_build <Y/N> <num_backups>')
+#   0 4 * * * run_cmd('check_build <Y/N> <num_backups> [backup_directory]')
 #
 # Example: create a backup and retain the 5 newest backup archives:
 #
@@ -84,7 +99,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260714 v1.25
+# 20260715 v1.26
 #
 
 use DXDebug;
@@ -122,10 +137,10 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260714-v1.25');
+report($self, \@out, 'SCRIPT BUILD : 20260714-v1.26');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.25');
+report($self, \@out, 'DXSpider Build Checker v1.26');
 report($self, \@out, "Repository : $git_remote_url");
 report($self, \@out, "Branch     : $git_branch");
 report($self, \@out, "Root       : " . (defined $main::root ? $main::root : '(undefined)'));
@@ -315,16 +330,26 @@ else {
     report($self, \@out, '  Tracked local modifications: none');
 }
 
+# Local tracked modifications are reported, but they do not by themselves
+# trigger an update. Backup and restart only occur when the local commit
+# differs from origin/mojo or the repository is not on the mojo branch.
 my $synchronization_required =
        $commit_changed
-    || $wrong_branch
-    || $tracked_changes;
+    || $wrong_branch;
 
 if (!$synchronization_required) {
     report($self, \@out, '');
     report($self, \@out, 'No new build available.');
     report($self, \@out, "Repository is already synchronized on " .
         "$git_branch at $remote_commit.");
+
+    if ($tracked_changes) {
+        report($self, \@out,
+            'WARNING: Tracked local modifications were detected.');
+        report($self, \@out,
+            'No backup was created and the node will not be restarted.');
+    }
+
     report($self, \@out, '');
     report($self, \@out, 'Finished successfully.');
 
@@ -839,3 +864,4 @@ sub is_tg
 
     return $result;
 }
+    
