@@ -6,7 +6,7 @@
 # This command always verifies and synchronizes the installation against:
 #
 #   Primary repository: git://scm.dxcluster.org/spider
-#   Backup repository:  git://scm.dxcluster.org/scm/spider
+#   Backup repository:  https://github.com/EA3CV/dxspider.git
 #   Branch:             mojo
 #
 # The current local branch and its configured upstream are ignored.
@@ -66,11 +66,11 @@
 #
 # Suggested DXSpider crontab entry:
 #
-#   0 4 * * * run_cmd('check_build <Y/N> <num_backups> [backup_directory]')
+#   0 4 * * 1,2,3,4,5 run_cmd('check_build <Y/N> <num_backups> [backup_directory]')
 #
 # Example: create a backup and retain the 10 newest backup archives:
 #
-#   0 4 * * * run_cmd('check_build Y 10')
+#   0 4 * * 1,2,3,4,5 run_cmd('check_build Y 10')
 #
 # Initial DXSpider Mojo clone:
 #
@@ -90,7 +90,7 @@
 #
 # Deprecated repository URL - do not use:
 #
-#   git://scm.dxcluster.org/scm/spider
+#   https://github.com/EA3CV/dxspider.git
 #
 # To keep check_build.pl updated automatically, add these entries to the
 # DXSpider crontab. Thanks to Keith G6NHU for the original idea:
@@ -100,7 +100,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260716 v1.28
+# 20260716 v1.29
 #
 
 use DXDebug;
@@ -134,16 +134,16 @@ my @out;
 
 my $git_remote_name = 'origin';
 my $git_primary_url = 'git://scm.dxcluster.org/spider';
-my $git_backup_url  = 'git://scm.dxcluster.org/scm/spider';
+my $git_backup_url  = 'https://github.com/EA3CV/dxspider.git';
 my $git_selected_url;
 my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260715-v1.28');
+report($self, \@out, 'SCRIPT BUILD : 20260716-v1.29');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.28');
+report($self, \@out, 'DXSpider Build Checker v1.29');
 report($self, \@out, "Primary repo : $git_primary_url");
 report($self, \@out, "Backup repo  : $git_backup_url");
 report($self, \@out, "Branch       : $git_branch");
