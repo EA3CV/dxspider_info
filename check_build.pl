@@ -5,8 +5,9 @@
 #
 # This command always verifies and synchronizes the installation against:
 #
-#   Repository: git://scm.dxcluster.org/spider
-#   Branch:     mojo
+#   Primary repository: git://scm.dxcluster.org/spider
+#   Backup repository:  git://scm.dxcluster.org/scm/spider
+#   Branch:             mojo
 #
 # The current local branch and its configured upstream are ignored.
 # If the repository was left on another branch, the command returns it
@@ -99,7 +100,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260715 v1.27
+# 20260716 v1.28
 #
 
 use DXDebug;
@@ -132,17 +133,20 @@ my $requested_backup_dir =
 my @out;
 
 my $git_remote_name = 'origin';
-my $git_remote_url  = 'git://scm.dxcluster.org/spider';
+my $git_primary_url = 'git://scm.dxcluster.org/spider';
+my $git_backup_url  = 'git://scm.dxcluster.org/scm/spider';
+my $git_selected_url;
 my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260714-v1.27');
+report($self, \@out, 'SCRIPT BUILD : 20260715-v1.28');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.27');
-report($self, \@out, "Repository : $git_remote_url");
-report($self, \@out, "Branch     : $git_branch");
+report($self, \@out, 'DXSpider Build Checker v1.28');
+report($self, \@out, "Primary repo : $git_primary_url");
+report($self, \@out, "Backup repo  : $git_backup_url");
+report($self, \@out, "Branch       : $git_branch");
 report($self, \@out, "Root       : " . (defined $main::root ? $main::root : '(undefined)'));
 report($self, \@out, "Backup     : " . ($backup_requested ? "enabled, keep $max_copies" : 'disabled'));
 report($self, \@out, '------------------------------------------------------------');
@@ -234,58 +238,32 @@ unless ($remote_status == 0) {
 }
 
 report($self, \@out, "  OK  Git remote '$git_remote_name' exists.");
-report($self, \@out, 'Setting and verifying Git remote URL ...');
+report($self, \@out, 'Selecting a working DXSpider repository ...');
 
-unless (run_git(
-    'remote',
-    'set-url',
+my ($selected_url, $remote_commit) = fetch_mojo_from_repositories(
+    $self,
+    \@out,
     $git_remote_name,
-    $git_remote_url
-)) {
-    return failure(
-        $self, \@out,
-        "Cannot set $git_remote_name to $git_remote_url."
-    );
-}
+    $remote_ref,
+    $git_branch,
+    $git_primary_url,
+    $git_backup_url
+);
 
-my ($configured_url, $url_status) =
-    capture_git('remote', 'get-url', $git_remote_name);
-
-unless ($url_status == 0 && $configured_url eq $git_remote_url) {
-    return failure(
-        $self, \@out,
-        "Remote verification failed: expected '$git_remote_url', " .
-        "found '$configured_url'."
-    );
-}
-
-report($self, \@out, "  OK  Remote URL: $configured_url");
-report($self, \@out, "Fetching $git_remote_name/$git_branch ...");
-
-unless (run_git(
-    'fetch',
-    '--no-tags',
-    '--prune',
-    $git_remote_name,
-    "+refs/heads/$git_branch:$remote_ref"
-)) {
-    return failure(
-        $self, \@out,
-        "Cannot fetch branch '$git_branch' from '$git_remote_url'."
-    );
-}
-
-my ($remote_commit, $remote_commit_status) =
-    capture_git('rev-parse', '--verify', "$remote_ref^{commit}");
-
-unless ($remote_commit_status == 0 &&
+unless (defined $selected_url &&
+        defined $remote_commit &&
         $remote_commit =~ /\A[0-9a-f]{40,64}\z/) {
     return failure(
-        $self, \@out,
-        "Remote reference '$remote_ref' does not resolve to a commit."
+        $self,
+        \@out,
+        'Neither the primary nor the backup repository could provide ' .
+        "a valid '$git_branch' branch."
     );
 }
 
+$git_selected_url = $selected_url;
+
+report($self, \@out, "  OK  Selected repository: $git_selected_url");
 report($self, \@out, "  OK  Remote commit: $remote_commit");
 report($self, \@out, 'Reading local repository state ...');
 
@@ -488,7 +466,7 @@ my ($final_url, $final_url_status) =
 
 unless ($final_url_status == 0 &&
         defined $final_url &&
-        $final_url eq $git_remote_url) {
+        $final_url eq $git_selected_url) {
     my $shown_final_url =
         defined $final_url && length $final_url
             ? $final_url
@@ -496,7 +474,7 @@ unless ($final_url_status == 0 &&
 
     return failure(
         $self, \@out,
-        "Final remote verification failed: expected '$git_remote_url', " .
+        "Final remote verification failed: expected '$git_selected_url', " .
         "found '$shown_final_url' (git status $final_url_status)."
     );
 }
@@ -550,6 +528,97 @@ DXCron::run_cmd('shut');
 # The report was already sent directly. Avoid returning it a second time if
 # shutdown processing allows this command to return.
 return 1;
+
+
+sub fetch_mojo_from_repositories
+{
+    my (
+        $self,
+        $out,
+        $remote_name,
+        $remote_ref,
+        $branch,
+        @urls
+    ) = @_;
+
+    for my $url (@urls) {
+        report($self, $out, "Trying repository: $url");
+
+        unless (run_git('remote', 'set-url', $remote_name, $url)) {
+            report(
+                $self,
+                $out,
+                "  ERROR: Cannot set remote '$remote_name' to '$url'."
+            );
+            next;
+        }
+
+        my ($configured_url, $url_status) =
+            capture_git('remote', 'get-url', $remote_name);
+
+        unless ($url_status == 0 &&
+                defined $configured_url &&
+                $configured_url eq $url) {
+            my $shown_url =
+                defined $configured_url && length $configured_url
+                    ? $configured_url
+                    : '(undefined)';
+
+            report(
+                $self,
+                $out,
+                "  ERROR: Remote verification failed for '$url'; " .
+                "found '$shown_url' (git status $url_status)."
+            );
+            next;
+        }
+
+        unless (run_git(
+            'fetch',
+            '--no-tags',
+            '--prune',
+            $remote_name,
+            "+refs/heads/$branch:$remote_ref"
+        )) {
+            report(
+                $self,
+                $out,
+                "  ERROR: Fetch failed from '$url'."
+            );
+            next;
+        }
+
+        my ($commit, $commit_status) =
+            capture_git(
+                'rev-parse',
+                '--verify',
+                "$remote_ref^{commit}"
+            );
+
+        unless ($commit_status == 0 &&
+                defined $commit &&
+                $commit =~ /\A[0-9a-f]{40,64}\z/) {
+            my $shown_commit =
+                defined $commit && length $commit
+                    ? $commit
+                    : '(undefined)';
+
+            report(
+                $self,
+                $out,
+                "  ERROR: '$url' did not provide a valid '$branch' " .
+                "commit; found '$shown_commit' " .
+                "(git status $commit_status)."
+            );
+            next;
+        }
+
+        report($self, $out, "  OK  Repository available: $url");
+        return ($url, $commit);
+    }
+
+    return;
+}
 
 
 sub resolve_backup_dir
@@ -867,4 +936,3 @@ sub is_tg
 
     return $result;
 }
- 
