@@ -7,7 +7,8 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20250608 v1.9
+# 20260723 v1.10
+# Version/build de partners: DXChannel como fuente principal, Route::Node como respaldo
 #
 
 use strict;
@@ -222,14 +223,13 @@ if (-d $dir_connect) {
 
 # Conexiones de nodos detalladas
 
-my $dxchan;
 my $tnow = time();
 push @out, " ";
 push @out, "---------------------------------- Node List -----------------------------------";
 push @out, "Node      R P  Type  IP Address      Port   Dir.  State   Cnum  Connection Time";
 push @out, "--------  - -  ----  --------------- -----  ----  ------  ----  ---------------";
 
-foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
+foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all() ) {
     my $call = $dxchan->call();
     # Ignorar si el call es igual a $main::mycall
     next if defined $main::mycall && $call eq $main::mycall;
@@ -246,7 +246,7 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     }
 
     my ($conn, $state) = ($dxchan->conn, $dxchan->state);
-    my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
+    my ($ip, $port, $dir, $cnum) = @{$conn}{qw(peerhost peerport sort cnum)};
 
     $dir = $dir eq "Incoming" ? "IN" : $dir eq "Outgoing" ? "OUT" : $dir;
 
@@ -269,7 +269,7 @@ push @out, "---------------------------------- Users List ----------------------
 push @out, "User      R P  Type  IP Address      Port   Dir.  State   Cnum  Connection Time";
 push @out, "--------  - -  ----  --------------- -----  ----  ------  ----  ---------------";
 
-foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
+foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all() ) {
     my $call = $dxchan->call();
     # Ignorar si el call es igual a $main::mycall
     next if defined $main::mycall && $call eq $main::mycall;
@@ -284,7 +284,7 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     }
 
     my ($conn, $state) = ($dxchan->conn, $dxchan->state);
-    my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
+    my ($ip, $port, $dir, $cnum) = @{$conn}{qw(peerhost peerport sort cnum)};
 
     $dir = $dir eq "Incoming" ? "IN" : $dir eq "Outgoing" ? "OUT" : $dir;
 
@@ -303,13 +303,12 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
 
 # Peers
 
-my $dxchan;
 push @out, " ";
-push @out, "-------------------------------- Partners List ---------------------------------";
+push @out, "--------------------------- Partners List (v1.12) ------------------------------";
 push @out, "Node      Type  Version  Build  R  P  Priv  Isolate";
 push @out, "--------  ----  -------  -----  -  -  ----  -------";
 
-foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
+foreach my $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all() ) {
     my $call = $dxchan->call();
     # Ignorar si el call es igual a $main::mycall
     next if defined $main::mycall && $call eq $main::mycall;
@@ -326,16 +325,38 @@ foreach $dxchan ( sort {$a->call cmp $b->call} DXChannel::get_all ) {
     }
 
     my ($conn, $state) = ($dxchan->conn, $dxchan->state);
-    my ($ip, $port, $dir, $cnum, $reg) = @{$conn}{qw(peerhost peerport sort cnum csort)};
+    my ($ip, $port, $dir, $cnum) = @{$conn}{qw(peerhost peerport sort cnum)};
 
-    my $priv = (DXUser::get_current($call) // {})->{priv};
-#    my $lock = (DXUser::get_current($call) // {})->{lockout} eq "1" ? "Y" : "";
-    my $version = (Route::Node::get($call) // {})->{version};
-    my $build = (Route::Node::get($call) // {})->{build};
+    my $user = DXUser::get_current($call) // {};
+    my $priv = $user->{priv};
+#    my $lock = defined($user->{lockout}) && $user->{lockout} eq "1" ? "Y" : "";
+
+    # Para un partner conectado, PC18 guarda version/build directamente
+    # en el objeto DXChannel. Route::Node se mantiene como respaldo.
+    my $route = Route::Node::get($call);
+    my $version = $dxchan->{version};
+    my $build   = $dxchan->{build};
+
+    $version = $route->{version}
+        if (!defined($version) || $version eq '')
+        && $route && defined($route->{version});
+
+    $build = $route->{build}
+        if (!defined($build) || $build eq '')
+        && $route && defined($route->{build});
+
+    $version = '-' unless defined($version) && $version ne '';
+    $build   = '-' unless defined($build)   && $build ne '';
+
+    # DXSpider puede entregar versiones nuevas como 54.58, mientras que
+    # las antiguas aparecen como 5457/5300. Para mantener el mismo formato,
+    # elimina el punto únicamente en versiones NN.NN: 54.58 -> 5458.
+    $version =~ tr/.//d if $version ne '-';
+
 #    my $badnode = ($DXProt::badnode->in($call)) eq "1" ? "Y" : "";
-    my $reg = (DXUser::get_current($call) // {})->{registered} eq "1" ? "R" : "";
-    my $pass = (DXUser::get_current($call) // {})->{passwd} ? "P" : "";
-    my $isolate = (DXUser::get_current($call) // {})->{isolate} ? "Y" : "";
+    my $reg = defined($user->{registered}) && $user->{registered} eq "1" ? "R" : "";
+    my $pass = $user->{passwd} ? "P" : "";
+    my $isolate = $user->{isolate} ? "Y" : "";
 
 if ($type eq "NODE") {
     push @out, sprintf "%-9s %-4s %7s %6s %3s %2s %4s %6s",
