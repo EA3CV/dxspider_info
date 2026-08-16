@@ -55,10 +55,10 @@
 # Required system packages:
 #
 #   apt update
-#   apt install git rsync
+#   apt install git rsync tar
 #
 # No additional CPAN modules are required by this command.
-# The Perl modules strict, warnings and Fcntl are included with Perl.
+# The Perl modules strict, warnings, Fcntl, Cwd and File::Path are included with Perl.
 # DXDebug is supplied by DXSpider.
 #
 # Do not use cpanm to install rsync. rsync is an operating-system command,
@@ -88,10 +88,6 @@
 #   The GitHub repository is a backup mirror of the Mojo branch and should
 #   only be used while the primary repository is unavailable.
 #
-# Deprecated repository URL - do not use:
-#
-#   https://github.com/EA3CV/dxspider.git
-#
 # To keep check_build.pl updated automatically, add these entries to the
 # DXSpider crontab. Thanks to Keith G6NHU for the original idea:
 #
@@ -100,7 +96,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260716 v1.29
+# 20260816 v1.33
 #
 
 use DXDebug;
@@ -109,19 +105,35 @@ use strict;
 use warnings;
 use Fcntl qw(:flock);
 use Cwd qw(realpath);
+use File::Path qw(remove_tree);
 
 my ($self, $line) = @_;
 
 return 1 unless $self->{priv} >= 9;
 
+my @out;
 my @args = grep { length $_ } split /\s+/, ($line // '');
+
+if (@args > 3) {
+    return failure($self, \@out,
+        'Usage: check_build <Y/N> <num_backups> [backup_directory]');
+}
+
+if (defined $args[0] && $args[0] !~ /\A[YN]\z/i) {
+    return failure($self, \@out,
+        "Invalid backup option '$args[0]'. Use Y or N.");
+}
 
 my $backup_requested =
     defined $args[0] && $args[0] =~ /\AY\z/i ? 1 : 0;
 
 my $max_copies = 10;
 
-if (defined $args[1] && $args[1] =~ /\A\d+\z/ && $args[1] > 0) {
+if (defined $args[1]) {
+    unless ($args[1] =~ /\A\d+\z/ && $args[1] > 0) {
+        return failure($self, \@out,
+            "Invalid num_backups '$args[1]'. Use a positive integer.");
+    }
     $max_copies = int($args[1]);
 }
 
@@ -129,8 +141,6 @@ my $requested_backup_dir =
     defined $args[2] && length $args[2]
         ? $args[2]
         : undef;
-
-my @out;
 
 my $git_remote_name = 'origin';
 my $git_primary_url = 'git://scm.dxcluster.org/spider';
@@ -140,15 +150,13 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260716-v1.29');
-
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.29');
+report($self, \@out, 'DXSpider Build Checker v1.33');
 report($self, \@out, "Primary repo : $git_primary_url");
 report($self, \@out, "Backup repo  : $git_backup_url");
-report($self, \@out, "Branch       : $git_branch");
-report($self, \@out, "Root       : " . (defined $main::root ? $main::root : '(undefined)'));
-report($self, \@out, "Backup     : " . ($backup_requested ? "enabled, keep $max_copies" : 'disabled'));
+report($self, \@out, "Target branch: $git_branch");
+report($self, \@out, "Root         : " . (defined $main::root ? $main::root : '(undefined)'));
+report($self, \@out, "Backup       : " . ($backup_requested ? "enabled, keep $max_copies" : 'disabled'));
 report($self, \@out, '------------------------------------------------------------');
 report($self, \@out, '');
 report($self, \@out, 'Starting update check ...');
@@ -159,8 +167,9 @@ open my $lock_fh, '>>', $lock_file
 unless (flock($lock_fh, LOCK_EX | LOCK_NB)) {
     report($self, \@out, 'Another check_build process is already running.');
     report($self, \@out, 'Operation cancelled.');
+    report($self, \@out, 'RESULT: ERROR');
     report($self, \@out, 'Finished with errors.');
-    return 1;
+    return finish_command($self, \@out);
 }
 
 report($self, \@out, 'Checking DXSpider root directory ...');
@@ -199,6 +208,10 @@ if ($backup_requested && !defined $backup_dir) {
 }
 
 if ($backup_requested) {
+    if (path_is_inside($backup_dir, $real_root)) {
+        return failure($self, \@out,
+            "Backup directory '$backup_dir' must not be inside the DXSpider installation tree.");
+    }
     report($self, \@out, "Selected backup directory: $backup_dir");
 }
 
@@ -212,6 +225,16 @@ unless (chdir $real_root) {
 }
 
 report($self, \@out, "  OK  Working directory: $real_root");
+report($self, \@out, 'Checking required system commands ...');
+
+for my $cmd ('git', ($backup_requested ? ('rsync', 'tar') : ())) {
+    unless (command_exists($cmd)) {
+        return failure($self, \@out,
+            "Required system command '$cmd' was not found in PATH.");
+    }
+    report($self, \@out, "  OK  Found $cmd.");
+}
+
 report($self, \@out, 'Checking Git working tree ...');
 
 my ($inside_work_tree, $inside_status) =
@@ -225,47 +248,11 @@ unless ($inside_status == 0 && $inside_work_tree eq 'true') {
 }
 
 report($self, \@out, '  OK  Valid Git working tree.');
-report($self, \@out, "Checking Git remote '$git_remote_name' ...");
 
-my (undef, $remote_status) =
-    capture_git('remote', 'get-url', $git_remote_name);
-
-unless ($remote_status == 0) {
-    return failure(
-        $self, \@out,
-        "Git remote '$git_remote_name' does not exist."
-    );
-}
-
-report($self, \@out, "  OK  Git remote '$git_remote_name' exists.");
-report($self, \@out, 'Selecting a working DXSpider repository ...');
-
-my ($selected_url, $remote_commit) = fetch_mojo_from_repositories(
-    $self,
-    \@out,
-    $git_remote_name,
-    $remote_ref,
-    $git_branch,
-    $git_primary_url,
-    $git_backup_url
-);
-
-unless (defined $selected_url &&
-        defined $remote_commit &&
-        $remote_commit =~ /\A[0-9a-f]{40,64}\z/) {
-    return failure(
-        $self,
-        \@out,
-        'Neither the primary nor the backup repository could provide ' .
-        "a valid '$git_branch' branch."
-    );
-}
-
-$git_selected_url = $selected_url;
-
-report($self, \@out, "  OK  Selected repository: $git_selected_url");
-report($self, \@out, "  OK  Remote commit: $remote_commit");
-report($self, \@out, 'Reading local repository state ...');
+# Read and report the node state before any network access. This is the
+# authoritative starting point for the operation and remains visible even
+# if both remote repositories are unavailable.
+report($self, \@out, 'Reading local node state ...');
 
 my ($local_commit, $local_commit_status) =
     capture_git('rev-parse', '--verify', 'HEAD^{commit}');
@@ -294,30 +281,139 @@ unless ($status_status == 0) {
 }
 
 my $tracked_changes = length($porcelain) ? 1 : 0;
-my $commit_changed  = $local_commit ne $remote_commit;
-my $wrong_branch    = $current_branch ne $git_branch;
+my ($local_build, $local_build_error) = build_at_commit($local_commit);
+my $shown_local_build = defined $local_build ? $local_build : '?';
+my $local_identity = "$current_branch/$shown_local_build";
+my $running_build =
+    defined $main::build && length $main::build ? $main::build : '?';
 
-report($self, \@out, "  Local branch : $current_branch");
-report($self, \@out, "  Local commit : $local_commit");
-report($self, \@out, "  Remote commit: $remote_commit");
+report($self, \@out, '------------------------------------------------------------');
+report($self, \@out, "LOCAL NODE   : $local_identity");
+report($self, \@out, "Local branch : $current_branch");
+report($self, \@out, "Local build  : $shown_local_build");
+report($self, \@out, "Running build: $running_build");
+report($self, \@out, "Target branch: $git_branch");
+report($self, \@out, "Local commit : $local_commit");
+report($self, \@out, 'Tracked files: ' .
+    ($tracked_changes ? 'modified' : 'clean'));
+report($self, \@out, '------------------------------------------------------------');
 
-if ($tracked_changes) {
-    report($self, \@out, '  Tracked local modifications: detected');
+if (!defined $local_build) {
+    report($self, \@out,
+        "WARNING: Cannot determine local build: $local_build_error");
+}
+
+if (defined $local_build &&
+    defined $main::build && length $main::build &&
+    "$main::build" ne "$local_build") {
+    report($self, \@out,
+        "WARNING: Running build $main::build does not match HEAD build $local_build.");
+}
+
+report($self, \@out, "Checking Git remote '$git_remote_name' ...");
+
+my (undef, $remote_status) =
+    capture_git('remote', 'get-url', $git_remote_name);
+
+unless ($remote_status == 0) {
+    report($self, \@out,
+        "  WARNING: Git remote '$git_remote_name' does not exist; creating it.");
+    unless (run_git('remote', 'add', $git_remote_name, $git_primary_url)) {
+        return failure($self, \@out,
+            "Cannot create Git remote '$git_remote_name'.");
+    }
+    report($self, \@out, "  OK  Git remote '$git_remote_name' created.");
 }
 else {
-    report($self, \@out, '  Tracked local modifications: none');
+    report($self, \@out, "  OK  Git remote '$git_remote_name' exists.");
+}
+report($self, \@out, 'Selecting a working DXSpider repository ...');
+
+my ($selected_url, $remote_commit) = fetch_mojo_from_repositories(
+    $self,
+    \@out,
+    $git_remote_name,
+    $remote_ref,
+    $git_branch,
+    $git_primary_url,
+    $git_backup_url
+);
+
+unless (defined $selected_url &&
+        defined $remote_commit &&
+        $remote_commit =~ /\A[0-9a-f]{40,64}\z/) {
+    return failure(
+        $self,
+        \@out,
+        'Neither the primary nor the backup repository could provide ' .
+        "a valid '$git_branch' branch."
+    );
 }
 
-# Local tracked modifications are reported, but they do not by themselves
-# trigger an update. Backup and restart only occur when the local commit
-# differs from origin/mojo or the repository is not on the mojo branch.
+$git_selected_url = $selected_url;
+
+report($self, \@out, "  OK  Selected repository: $git_selected_url");
+report($self, \@out, "  OK  Remote commit: $remote_commit");
+report($self, \@out, 'Comparing local node with remote target ...');
+
+my $commit_changed  = $local_commit ne $remote_commit;
+my $wrong_branch    = $current_branch ne $git_branch;
+my $commit_relation = 'same';
+
+my ($remote_build, $remote_build_error) = build_at_commit($remote_commit);
+my $shown_remote_build = defined $remote_build ? $remote_build : '?';
+my $remote_identity    = "$git_branch/$shown_remote_build";
+
+if ($commit_changed) {
+    my $local_is_ancestor = git_exit_code(
+        'merge-base', '--is-ancestor', $local_commit, $remote_commit
+    );
+    my $remote_is_ancestor = git_exit_code(
+        'merge-base', '--is-ancestor', $remote_commit, $local_commit
+    );
+
+    unless (($local_is_ancestor == 0 || $local_is_ancestor == 1) &&
+            ($remote_is_ancestor == 0 || $remote_is_ancestor == 1)) {
+        return failure($self, \@out,
+            'Cannot determine the relationship between local and remote commits.');
+    }
+
+    if ($local_is_ancestor == 0 && $remote_is_ancestor == 1) {
+        $commit_relation = 'remote_ahead';
+    }
+    elsif ($local_is_ancestor == 1 && $remote_is_ancestor == 0) {
+        $commit_relation = 'local_ahead';
+    }
+    else {
+        $commit_relation = 'diverged';
+    }
+}
+
+report($self, \@out, "  Current      : $local_identity");
+report($self, \@out, "  Target       : $remote_identity");
+report($self, \@out, "  Remote commit: $remote_commit");
+
+if (!defined $remote_build) {
+    report($self, \@out,
+        "  WARNING: Cannot determine remote build: $remote_build_error");
+}
+
+# Synchronization is required whenever the checked-out state differs from
+# the canonical remote state, including tracked working-tree modifications.
 my $synchronization_required =
        $commit_changed
-    || $wrong_branch;
+    || $wrong_branch
+    || $tracked_changes;
 
 if (!$synchronization_required) {
     report($self, \@out, '');
+    report($self, \@out, '------------------------------------------------------------');
+    report($self, \@out, "CURRENT: $local_identity");
+    report($self, \@out, "TARGET : $remote_identity");
+    report($self, \@out, 'STATUS : already synchronized');
+    report($self, \@out, '------------------------------------------------------------');
     report($self, \@out, 'No new build available.');
+    report($self, \@out, 'RESULT: NO_UPDATE');
     report($self, \@out, "Repository is already synchronized on " .
         "$git_branch at $remote_commit.");
 
@@ -336,13 +432,25 @@ if (!$synchronization_required) {
 
     # No shutdown occurs in this path, so return the accumulated output
     # normally and let DXCommandmode display it in the console.
-    return (1, @out);
+    return finish_command($self, \@out);
 }
 
 report($self, \@out, '');
+report($self, \@out, '------------------------------------------------------------');
+report($self, \@out, "CHANGE: $local_identity -> $remote_identity");
+report($self, \@out, "  Git : $local_commit -> $remote_commit");
+report($self, \@out, '------------------------------------------------------------');
 
-if ($commit_changed) {
-    report($self, \@out, 'A different build is available on origin/mojo.');
+if ($commit_relation eq 'remote_ahead') {
+    report($self, \@out, 'Remote target is ahead in Git history.');
+}
+elsif ($commit_relation eq 'local_ahead') {
+    report($self, \@out,
+        'WARNING: Local HEAD is ahead of origin/mojo. Synchronization will discard local commit(s).');
+}
+elsif ($commit_relation eq 'diverged') {
+    report($self, \@out,
+        'WARNING: Local and origin/mojo histories have diverged. Synchronization will discard local commit(s).');
 }
 
 if ($wrong_branch) {
@@ -367,8 +475,9 @@ if ($backup_requested) {
         report($self, \@out, '');
         report($self, \@out, 'ERROR: Backup failed. Git synchronization has been cancelled.');
         report($self, \@out, 'Repository synchronization was not started.');
+        report($self, \@out, 'RESULT: ERROR');
         report($self, \@out, 'Finished with errors.');
-        return 1;
+        return finish_command($self, \@out);
     }
 }
 else {
@@ -383,6 +492,7 @@ report($self, \@out, "  Switching/resetting local branch '$git_branch' ...");
 
 unless (run_git(
     'checkout',
+    '-f',
     '-B',
     $git_branch,
     $remote_ref
@@ -510,6 +620,7 @@ report($self, \@out, '');
 report($self, \@out, "Repository synchronized successfully: " .
     "$git_branch at $final_commit.");
 report($self, \@out, 'DXSpider shutdown/restart has been requested.');
+report($self, \@out, 'RESULT: SYNCHRONIZED');
 report($self, \@out, 'Finished successfully.');
 
 dbg("DXCron::spawn: synchronized $git_branch at $final_commit")
@@ -521,12 +632,13 @@ dbg("DXCron::spawn: synchronized $git_branch at $final_commit")
 # Send the complete report directly to the requesting console and write it to
 # the DXSpider debug log before executing "shut".
 #
+send_report_to_client($self, \@out);
 eval { DXLog::flushall(); };
 
 DXCron::run_cmd('shut');
 
-# The report was already sent directly. Avoid returning it a second time if
-# shutdown processing allows this command to return.
+# Shutdown may prevent the normal command-return path from reaching the client.
+# The report has therefore already been sent directly above.
 return 1;
 
 
@@ -689,6 +801,34 @@ sub resolve_backup_dir
 }
 
 
+sub path_is_inside
+{
+    my ($candidate, $root) = @_;
+
+    return 0 unless defined $candidate && defined $root;
+
+    my $root_real = realpath($root);
+    return 0 unless defined $root_real;
+
+    my $candidate_real;
+
+    if (-e $candidate) {
+        $candidate_real = realpath($candidate);
+    }
+    else {
+        my ($parent, $name) = $candidate =~ m{\A(.+)/([^/]+)\z};
+        if (defined $parent && defined $name) {
+            my $parent_real = realpath($parent);
+            $candidate_real = "$parent_real/$name" if defined $parent_real;
+        }
+    }
+
+    return 0 unless defined $candidate_real;
+    return 1 if $candidate_real eq $root_real;
+    return index($candidate_real, "$root_real/") == 0 ? 1 : 0;
+}
+
+
 sub create_backup
 {
     my %arg = @_;
@@ -770,6 +910,7 @@ sub create_backup
     unless (command_succeeded($rsync_status)) {
         report($self, $out, '  ERROR: rsync failed while creating the backup ' .
             '(exit code ' . command_exit_code($rsync_status) . ').');
+        cleanup_backup_artifacts($staging_dir, $archive);
         return 0;
     }
 
@@ -787,6 +928,7 @@ sub create_backup
     unless (command_succeeded($tar_status)) {
         report($self, $out, '  ERROR: tar failed while creating the backup archive ' .
             '(exit code ' . command_exit_code($tar_status) . ').');
+        cleanup_backup_artifacts($staging_dir, $archive);
         return 0;
     }
 
@@ -807,8 +949,8 @@ sub create_backup
         my $oldest = shift @archives;
 
         unless (unlink $oldest) {
-            report($self, $out, "  ERROR: Cannot remove old backup '$oldest': $!");
-            return 0;
+            report($self, $out, "  WARNING: Cannot remove old backup '$oldest': $!");
+            next;
         }
 
         report($self, $out, "  Removed old backup: $oldest");
@@ -824,6 +966,20 @@ sub create_backup
     is_tg("*$node_call*   Backup Completed");
 
     return 1;
+}
+
+
+sub command_exists
+{
+    my ($cmd) = @_;
+
+    for my $dir (split /:/, ($ENV{PATH} // '')) {
+        next unless length $dir;
+        my $path = "$dir/$cmd";
+        return 1 if -f $path && -x $path;
+    }
+
+    return 0;
 }
 
 
@@ -888,17 +1044,115 @@ sub failure
     report($self, $out, 'ERROR');
     report($self, $out, $message);
     report($self, $out, 'Operation cancelled.');
+    report($self, $out, 'RESULT: ERROR');
     report($self, $out, 'Finished with errors.');
+
+    return finish_command($self, $out);
+}
+
+
+sub finish_command
+{
+    my ($self, $out) = @_;
+
+    # Prefer immediate delivery for a live DXChannel. This fixes telnet/expect
+    # sessions where returned command output is not flushed reliably. If the
+    # method is unavailable or fails, fall back to the normal DXSpider return.
+    if (send_report_to_client($self, $out)) {
+        return 1;
+    }
+
+    return (1, @$out);
+}
+
+
+sub send_report_to_client
+{
+    my ($self, $out) = @_;
+
+    return 0 unless $self && $out && ref($out) eq 'ARRAY';
+    return 0 unless $self->{conn};
+    return 0 unless eval { $self->can('send_now') };
+
+    my $ok = eval {
+        # DXChannel::send_now requires the transmission type first.
+        # 'D' is normal command/data output.
+        $self->send_now('D', @$out);
+        1;
+    };
+
+    return $ok ? 1 : 0;
+}
+
+
+sub build_at_commit
+{
+    my ($commit) = @_;
+
+    return (undef, 'commit is undefined')
+        unless defined $commit && $commit =~ /\A[0-9a-f]{40,64}\z/;
+
+    # DXSpider 1.57 is the Git baseline for the Mojo build counter.
+    # The build number is the number of commits reachable from the target
+    # commit that are newer than tag 1.57.  This works for any local or
+    # remote commit without reading generated Perl version files.
+    my $build_base_tag = '1.57';
+
+    my ($base_commit, $base_status) =
+        capture_git('rev-parse', '--verify', "refs/tags/$build_base_tag^{commit}");
+
+    return (undef, "Git build base tag '$build_base_tag' is not available")
+        unless $base_status == 0 &&
+               defined $base_commit &&
+               $base_commit =~ /\A[0-9a-f]{40,64}\z/;
+
+    my $ancestor_status =
+        git_exit_code('merge-base', '--is-ancestor', $base_commit, $commit);
+
+    return (undef, "commit $commit is not descended from Git build base tag '$build_base_tag'")
+        if $ancestor_status == 1;
+
+    return (undef, "cannot verify Git ancestry from build base tag '$build_base_tag' to commit $commit")
+        unless $ancestor_status == 0;
+
+    my ($count, $count_status) =
+        capture_git('rev-list', '--count', "$build_base_tag..$commit");
+
+    return (undef, "cannot calculate Git build for commit $commit")
+        unless $count_status == 0 && defined $count && $count =~ /\A\d+\z/;
+
+    return (int($count), undef);
+}
+
+
+sub git_exit_code
+{
+    my @args = @_;
+    my $status = system('git', @args);
+
+    return 255 if !defined $status || $status == -1 || ($status & 127);
+    return $status >> 8;
+}
+
+
+sub cleanup_backup_artifacts
+{
+    my ($staging_dir, $archive) = @_;
+
+    unlink $archive if defined $archive && -f $archive;
+
+    if (defined $staging_dir && -d $staging_dir) {
+        eval { remove_tree($staging_dir); 1; };
+    }
 
     return 1;
 }
 
 
 #
-# Add a message to the command output, write it immediately through DXLog::LogDbg to the
-# DXSpider debug and system logs and, when the command is interactive, send it immediately to the
-# requesting console. This keeps cron executions in the log while allowing an
-# operator to see progress before an automatic shutdown.
+# Add a message to the accumulated command output and write it through
+# DXLog::LogDbg. Live client delivery is performed by finish_command(), or
+# explicitly just before shutdown after a successful synchronization.
 #
 sub report
 {
@@ -911,12 +1165,10 @@ sub report
 
     # Official DXSpider logging path. LogDbg sets the debug category,
     # writes to local_data/debug/YYYY/DDD.dat and also to the system log.
-    DXLog::LogDbg('check_build', $message);
+    eval { DXLog::LogDbg('check_build', $message); 1; };
 
-    # Do not send progress directly to the interactive channel.
-    # During long-running operations the command channel may not display
-    # these messages until the command has finished or shutdown has begun.
-    # The complete progress report is therefore written to the DXSpider log.
+    # Client delivery is performed once by finish_command(), or immediately
+    # before shutdown in the successful synchronization path.
     return 1;
 }
 
