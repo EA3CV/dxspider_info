@@ -96,7 +96,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260816 v1.33
+# 20260818 v1.39
 #
 
 use DXDebug;
@@ -150,8 +150,10 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
+report($self, \@out, 'SCRIPT BUILD : 20260817-v1.39');
+
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.33');
+report($self, \@out, 'DXSpider Build Checker v1.39');
 report($self, \@out, "Primary repo : $git_primary_url");
 report($self, \@out, "Backup repo  : $git_backup_url");
 report($self, \@out, "Target branch: $git_branch");
@@ -398,12 +400,21 @@ if (!defined $remote_build) {
         "  WARNING: Cannot determine remote build: $remote_build_error");
 }
 
-# Synchronization is required whenever the checked-out state differs from
-# the canonical remote state, including tracked working-tree modifications.
-my $synchronization_required =
+# Distinguish an actual repository state change (branch and/or commit)
+# from a working-tree repair.  Tracked local modifications require
+# synchronization, but they are not a build or branch CHANGE when HEAD
+# already matches the canonical remote state.
+my $repository_change =
        $commit_changed
-    || $wrong_branch
-    || $tracked_changes;
+    || $wrong_branch;
+
+my $repair_required =
+       !$repository_change
+    && $tracked_changes;
+
+my $synchronization_required =
+       $repository_change
+    || $repair_required;
 
 if (!$synchronization_required) {
     report($self, \@out, '');
@@ -416,13 +427,6 @@ if (!$synchronization_required) {
     report($self, \@out, 'RESULT: NO_UPDATE');
     report($self, \@out, "Repository is already synchronized on " .
         "$git_branch at $remote_commit.");
-
-    if ($tracked_changes) {
-        report($self, \@out,
-            'WARNING: Tracked local modifications were detected.');
-        report($self, \@out,
-            'No backup was created and the node will not be restarted.');
-    }
 
     report($self, \@out, '');
     report($self, \@out, 'Finished successfully.');
@@ -437,8 +441,17 @@ if (!$synchronization_required) {
 
 report($self, \@out, '');
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, "CHANGE: $local_identity -> $remote_identity");
-report($self, \@out, "  Git : $local_commit -> $remote_commit");
+
+if ($repository_change) {
+    report($self, \@out, "CHANGE: $local_identity -> $remote_identity");
+    report($self, \@out, "  Git : $local_commit -> $remote_commit");
+}
+else {
+    report($self, \@out, "REPAIR: $local_identity");
+    report($self, \@out, "  Git : unchanged at $local_commit");
+    report($self, \@out, '  Reason: tracked local modifications detected');
+}
+
 report($self, \@out, '------------------------------------------------------------');
 
 if ($commit_relation eq 'remote_ahead') {
@@ -617,14 +630,26 @@ unless ($upstream_status == 0 &&
 
 report($self, \@out, "  OK  Upstream: $upstream");
 report($self, \@out, '');
-report($self, \@out, "Repository synchronized successfully: " .
-    "$git_branch at $final_commit.");
-report($self, \@out, 'DXSpider shutdown/restart has been requested.');
-report($self, \@out, 'RESULT: SYNCHRONIZED');
-report($self, \@out, 'Finished successfully.');
+if ($repository_change) {
+    report($self, \@out, "Repository synchronized successfully: " .
+        "$git_branch at $final_commit.");
+    report($self, \@out, 'DXSpider shutdown/restart has been requested.');
+    report($self, \@out, 'RESULT: SYNCHRONIZED');
 
-dbg("DXCron::spawn: synchronized $git_branch at $final_commit")
-    if isdbg('cron');
+    dbg("DXCron::spawn: synchronized $git_branch at $final_commit")
+        if isdbg('cron');
+}
+else {
+    report($self, \@out, "Repository working tree repaired successfully: " .
+        "$git_branch at $final_commit.");
+    report($self, \@out, 'DXSpider shutdown/restart has been requested.');
+    report($self, \@out, 'RESULT: REPAIRED');
+
+    dbg("DXCron::spawn: repaired working tree on $git_branch at $final_commit")
+        if isdbg('cron');
+}
+
+report($self, \@out, 'Finished successfully.');
 
 #
 # The command normally returns @out to DXCommandmode, which then displays it.
