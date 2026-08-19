@@ -96,7 +96,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260818 v1.39
+# 20260819 v1.43
 #
 
 use DXDebug;
@@ -150,10 +150,10 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260817-v1.39');
+report($self, \@out, 'SCRIPT BUILD : 20260819-v1.43');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.39');
+report($self, \@out, 'DXSpider Build Checker v1.43');
 report($self, \@out, "Primary repo : $git_primary_url");
 report($self, \@out, "Backup repo  : $git_backup_url");
 report($self, \@out, "Target branch: $git_branch");
@@ -283,6 +283,8 @@ unless ($status_status == 0) {
 }
 
 my $tracked_changes = length($porcelain) ? 1 : 0;
+my @tracked_status = length($porcelain) ? split(/\n/, $porcelain) : ();
+my $tracked_change_count = scalar @tracked_status;
 my ($local_build, $local_build_error) = build_at_commit($local_commit);
 my $shown_local_build = defined $local_build ? $local_build : '?';
 my $local_identity = "$current_branch/$shown_local_build";
@@ -297,7 +299,14 @@ report($self, \@out, "Running build: $running_build");
 report($self, \@out, "Target branch: $git_branch");
 report($self, \@out, "Local commit : $local_commit");
 report($self, \@out, 'Tracked files: ' .
-    ($tracked_changes ? 'modified' : 'clean'));
+    ($tracked_changes ? "modified ($tracked_change_count)" : 'clean'));
+
+if ($tracked_changes) {
+    for my $status_line (@tracked_status) {
+        report($self, \@out, "  Git status: $status_line");
+    }
+}
+
 report($self, \@out, '------------------------------------------------------------');
 
 if (!defined $local_build) {
@@ -400,10 +409,12 @@ if (!defined $remote_build) {
         "  WARNING: Cannot determine remote build: $remote_build_error");
 }
 
-# Distinguish an actual repository state change (branch and/or commit)
-# from a working-tree repair.  Tracked local modifications require
-# synchronization, but they are not a build or branch CHANGE when HEAD
-# already matches the canonical remote state.
+# The canonical state is origin/mojo plus an unmodified Git-tracked
+# working tree.  A branch/commit difference is a repository CHANGE.
+# Tracked local modifications with the same branch/commit are a RESTORE:
+# the versioned files no longer match the canonical repository content.
+# Both conditions require synchronization and restart.  Untracked files
+# are intentionally ignored.
 my $repository_change =
        $commit_changed
     || $wrong_branch;
@@ -447,9 +458,13 @@ if ($repository_change) {
     report($self, \@out, "  Git : $local_commit -> $remote_commit");
 }
 else {
-    report($self, \@out, "REPAIR: $local_identity");
+    report($self, \@out, "RESTORE: $local_identity");
     report($self, \@out, "  Git : unchanged at $local_commit");
-    report($self, \@out, '  Reason: tracked local modifications detected');
+    report($self, \@out,
+        "  Reason: $tracked_change_count Git-tracked file(s) differ from origin/$git_branch");
+    for my $status_line (@tracked_status) {
+        report($self, \@out, "  Restore: $status_line");
+    }
 }
 
 report($self, \@out, '------------------------------------------------------------');
@@ -471,7 +486,11 @@ if ($wrong_branch) {
 }
 
 if ($tracked_changes) {
-    report($self, \@out, 'Tracked local modifications will be replaced during synchronization.');
+    report($self, \@out,
+        'Git-tracked local files differ from the canonical repository and will be restored.');
+    for my $status_line (@tracked_status) {
+        report($self, \@out, "  Will restore: $status_line");
+    }
 }
 
 if ($backup_requested) {
@@ -640,12 +659,12 @@ if ($repository_change) {
         if isdbg('cron');
 }
 else {
-    report($self, \@out, "Repository working tree repaired successfully: " .
+    report($self, \@out, "Repository tracked files restored successfully: " .
         "$git_branch at $final_commit.");
     report($self, \@out, 'DXSpider shutdown/restart has been requested.');
-    report($self, \@out, 'RESULT: REPAIRED');
+    report($self, \@out, 'RESULT: RESTORED');
 
-    dbg("DXCron::spawn: repaired working tree on $git_branch at $final_commit")
+    dbg("DXCron::spawn: restored tracked files on $git_branch at $final_commit")
         if isdbg('cron');
 }
 
