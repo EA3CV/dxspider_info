@@ -17,6 +17,33 @@
 #   Synchronization discards local modifications to Git-tracked files.
 #   Untracked files and directories are not deleted.
 #
+#   Restore exclusions:
+#
+#   Some Git-tracked paths may legitimately be modified by normal DXSpider
+#   operation. These paths are reported, but do not by themselves trigger
+#   repository restoration or a node restart.
+#
+#   Restore exclusions are configured in @tracked_restore_exclusions below.
+#   Entries ending in "/" exclude that directory and everything below it.
+#   Other entries exclude one exact file/path.
+#
+#   Example:
+#
+#       my @tracked_restore_exclusions = (
+#           'data/',                 # Entire directory tree
+#           'perl/example.pm',       # One exact file
+#       );
+#
+#   A rename/copy is excluded only when BOTH source and destination paths
+#   match an exclusion. Moving a tracked file between an excluded and a
+#   protected area remains restore-relevant.
+#
+#   IMPORTANT:
+#   These exclusions affect only whether local tracked modifications trigger
+#   a RESTORE. They do NOT remove the paths from Git and do NOT exclude them
+#   from a real branch/commit synchronization. A real update still resets the
+#   complete Git-tracked tree to origin/mojo.
+#
 # Backup options:
 #
 #   check_build <Y/N> <num_backups> [backup_directory]
@@ -96,7 +123,7 @@
 #
 # Kin EA3CV, ea3cv@cronux.net
 #
-# 20260819 v1.43
+# 20260820 v1.45
 #
 
 use DXDebug;
@@ -150,10 +177,17 @@ my $git_branch      = 'mojo';
 my $remote_ref      = 'refs/remotes/origin/mojo';
 my $lock_file       = '/tmp/dxspider-check-build.lock';
 
-report($self, \@out, 'SCRIPT BUILD : 20260819-v1.43');
+# Git-tracked paths that may legitimately change during normal DXSpider
+# operation and therefore must not, by themselves, trigger RESTORE/restart.
+# Directory entries MUST end with "/". File entries are exact paths.
+my @tracked_restore_exclusions = (
+    'data/',
+);
+
+report($self, \@out, 'SCRIPT BUILD : 20260820-v1.45');
 
 report($self, \@out, '------------------------------------------------------------');
-report($self, \@out, 'DXSpider Build Checker v1.43');
+report($self, \@out, 'DXSpider Build Checker v1.45');
 report($self, \@out, "Primary repo : $git_primary_url");
 report($self, \@out, "Backup repo  : $git_backup_url");
 report($self, \@out, "Target branch: $git_branch");
@@ -282,9 +316,21 @@ unless ($status_status == 0) {
     );
 }
 
-my $tracked_changes = length($porcelain) ? 1 : 0;
 my @tracked_status = length($porcelain) ? split(/\n/, $porcelain) : ();
-my $tracked_change_count = scalar @tracked_status;
+
+# Split tracked modifications into restore-relevant and explicitly excluded
+# paths. Excluded paths remain visible in the report for auditability.
+my @excluded_tracked_status =
+    grep { status_matches_restore_exclusion($_, \@tracked_restore_exclusions) }
+    @tracked_status;
+
+my @restore_tracked_status =
+    grep { !status_matches_restore_exclusion($_, \@tracked_restore_exclusions) }
+    @tracked_status;
+
+my $tracked_changes = @restore_tracked_status ? 1 : 0;
+my $tracked_change_count = scalar @restore_tracked_status;
+my $excluded_tracked_change_count = scalar @excluded_tracked_status;
 my ($local_build, $local_build_error) = build_at_commit($local_commit);
 my $shown_local_build = defined $local_build ? $local_build : '?';
 my $local_identity = "$current_branch/$shown_local_build";
@@ -298,12 +344,21 @@ report($self, \@out, "Local build  : $shown_local_build");
 report($self, \@out, "Running build: $running_build");
 report($self, \@out, "Target branch: $git_branch");
 report($self, \@out, "Local commit : $local_commit");
-report($self, \@out, 'Tracked files: ' .
-    ($tracked_changes ? "modified ($tracked_change_count)" : 'clean'));
+report($self, \@out, 'Tracked files requiring restore: ' .
+    ($tracked_changes ? "modified ($tracked_change_count)" : 'none'));
 
 if ($tracked_changes) {
-    for my $status_line (@tracked_status) {
+    for my $status_line (@restore_tracked_status) {
         report($self, \@out, "  Git status: $status_line");
+    }
+}
+
+report($self, \@out, 'Tracked files excluded from restore: ' .
+    ($excluded_tracked_change_count ? "modified ($excluded_tracked_change_count)" : 'none'));
+
+if ($excluded_tracked_change_count) {
+    for my $status_line (@excluded_tracked_status) {
+        report($self, \@out, "  Excluded status: $status_line");
     }
 }
 
@@ -409,12 +464,11 @@ if (!defined $remote_build) {
         "  WARNING: Cannot determine remote build: $remote_build_error");
 }
 
-# The canonical state is origin/mojo plus an unmodified Git-tracked
-# working tree.  A branch/commit difference is a repository CHANGE.
-# Tracked local modifications with the same branch/commit are a RESTORE:
-# the versioned files no longer match the canonical repository content.
-# Both conditions require synchronization and restart.  Untracked files
-# are intentionally ignored.
+# A branch/commit difference is a repository CHANGE. Restore-relevant
+# tracked local modifications with the same branch/commit are a RESTORE.
+# Paths matching @tracked_restore_exclusions are reported but do not, by
+# themselves, trigger synchronization. Untracked files are intentionally
+# ignored.
 my $repository_change =
        $commit_changed
     || $wrong_branch;
@@ -439,6 +493,17 @@ if (!$synchronization_required) {
     report($self, \@out, "Repository is already synchronized on " .
         "$git_branch at $remote_commit.");
 
+    if ($excluded_tracked_change_count) {
+        report($self, \@out, '');
+        report($self, \@out,
+            'INFO: Git-tracked files matching restore exclusions differ locally.');
+        report($self, \@out,
+            'These excluded changes are reported but do not trigger restoration.');
+        for my $status_line (@excluded_tracked_status) {
+            report($self, \@out, "  Excluded status: $status_line");
+        }
+    }
+
     report($self, \@out, '');
     report($self, \@out, 'Finished successfully.');
 
@@ -462,7 +527,7 @@ else {
     report($self, \@out, "  Git : unchanged at $local_commit");
     report($self, \@out,
         "  Reason: $tracked_change_count Git-tracked file(s) differ from origin/$git_branch");
-    for my $status_line (@tracked_status) {
+    for my $status_line (@restore_tracked_status) {
         report($self, \@out, "  Restore: $status_line");
     }
 }
@@ -485,10 +550,20 @@ if ($wrong_branch) {
     report($self, \@out, "The repository is on '$current_branch' and will be returned to '$git_branch'.");
 }
 
+if ($repository_change && $excluded_tracked_change_count) {
+    report($self, \@out,
+        'INFO: Git-tracked files matching restore exclusions also differ locally.');
+    report($self, \@out,
+        'They did not trigger this update, but the real branch/commit synchronization will update the complete tracked tree.');
+    for my $status_line (@excluded_tracked_status) {
+        report($self, \@out, "  Excluded status: $status_line");
+    }
+}
+
 if ($tracked_changes) {
     report($self, \@out,
         'Git-tracked local files differ from the canonical repository and will be restored.');
-    for my $status_line (@tracked_status) {
+    for my $status_line (@restore_tracked_status) {
         report($self, \@out, "  Will restore: $status_line");
     }
 }
@@ -1010,6 +1085,57 @@ sub create_backup
     is_tg("*$node_call*   Backup Completed");
 
     return 1;
+}
+
+
+sub status_matches_restore_exclusion
+{
+    my ($status_line, $exclusions) = @_;
+
+    return 0 unless defined $status_line;
+    return 0 unless $exclusions && ref($exclusions) eq 'ARRAY';
+
+    # Porcelain v1 format starts with two status columns followed by a space.
+    # Keep the complete status line for reporting and classify only paths.
+    my $path = length($status_line) >= 4 ? substr($status_line, 3) : '';
+
+    # For renames/copies, BOTH paths must be excluded. A move between an
+    # excluded path and a protected path remains restore-relevant.
+    if ($path =~ / -> /) {
+        my ($from, $to) = split(/ -> /, $path, 2);
+        return path_matches_restore_exclusion($from, $exclusions)
+            && path_matches_restore_exclusion($to, $exclusions) ? 1 : 0;
+    }
+
+    return path_matches_restore_exclusion($path, $exclusions);
+}
+
+
+sub path_matches_restore_exclusion
+{
+    my ($path, $exclusions) = @_;
+
+    return 0 unless defined $path;
+    return 0 unless $exclusions && ref($exclusions) eq 'ARRAY';
+
+    # Git may quote unusual pathnames in porcelain output.
+    $path =~ s/\A"//;
+    $path =~ s/"\z//;
+
+    for my $entry (@$exclusions) {
+        next unless defined $entry && length $entry;
+
+        if ($entry =~ m{/\z}) {
+            # Directory/tree exclusion. "data/" matches data/* recursively.
+            return 1 if index($path, $entry) == 0;
+        }
+        else {
+            # Exact file/path exclusion.
+            return 1 if $path eq $entry;
+        }
+    }
+
+    return 0;
 }
 
 
