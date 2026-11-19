@@ -11,113 +11,100 @@
 #  Installation:
 #    Save as: /spider/local_cmd/mnodes.pl
 #
-#  Author   : Kin EA3CV ea3cv@cronux.net
-#  Version  : 20260308 v1.10
+#  Author  Kin EA3CV ea3cv@cronux.net
+#  Version 2026119 v2.1
 #
 
 use strict;
 use warnings;
 
-my ($self, $line) = @_;
+my $SHOW_IP = 1;    # Installer preserves the current installed setting.
+
+my ( $self, $line ) = @_;
 return 1 unless $self->priv >= 1;
-
 my $now = time();
-my $localcall = $main::mycall;
-
-my $local_node;
-my @nodes;
-my @rbn_nodes;
-
-foreach my $dxchan (DXChannel::get_all()) {
-    next unless $dxchan->is_node || $dxchan->is_rbn;
-
-    if ($dxchan->is_rbn) {
-        push @rbn_nodes, $dxchan;
-    } elsif ($dxchan->call eq $localcall) {
-        $local_node = $dxchan;
-    } else {
-        push @nodes, $dxchan;
-    }
+my ( $local, @remote, @rbn );
+for my $ch ( DXChannel::get_all() ) {
+    next unless $ch->is_node || $ch->is_rbn;
+    if    ( $ch->is_rbn )                { push @rbn, $ch }
+    elsif ( $ch->call eq $main::mycall ) { $local = $ch }
+    else                                 { push @remote, $ch }
 }
-
 my @out = (
-    " ",
-    " List of Connected Nodes:",
-    " ",
-    " Callsign  R P  Type       Connection Time",
-    " --------  - -  ---------  ---------------"
+    ' ',
+    ' List of Connected Nodes:',
+    ' ',
+    sprintf(
+        ' %-12s %1s %1s  %-9s  %-12s%s',
+        'Callsign', 'R', 'P', 'Type', 'Connected', $SHOW_IP ? '  IP' : ''
+    ),
+    sprintf(
+        ' %-12s %1s %1s  %-9s  %-12s%s',
+        '-' x 12, '-', '-', '-' x 9, '-' x 12, $SHOW_IP ? '  ' . ( '-' x 15 ) : ''
+    ),
 );
-
-# Mostrar primero el nodo local (sin afectar a contadores)
-push @out, format_node($local_node, $now) if $local_node;
-
-# Nodos remotos ordenados
-foreach my $dxchan (sort { $a->call cmp $b->call } @nodes) {
-    push @out, format_node($dxchan, $now);
+my @all = (
+    defined($local) ? ($local) : (),
+    sort { $a->call cmp $b->call } @remote,
+    sort { $a->call cmp $b->call } @rbn
+);
+push @out, format_node( $local, $now, $SHOW_IP ) if defined $local;
+push @out, map { format_node( $_, $now, $SHOW_IP ) } sort { $a->call cmp $b->call } @remote;
+if (@rbn) {
+    push @out, ' ' if defined($local) || @remote;
+    push @out, map { format_node( $_, $now, $SHOW_IP ) } sort { $a->call cmp $b->call } @rbn;
 }
-
-# Nodos RBN al final
-if (@rbn_nodes) {
-    push @out, " ";
-    foreach my $dxchan (sort { $a->call cmp $b->call } @rbn_nodes) {
-        push @out, format_node($dxchan, $now, "RBN ");
-    }
+my ( $registered, $with_passwd ) = ( 0, 0 );
+for my $ch (@all) {
+    $registered++  if reg( $ch->call );
+    $with_passwd++ if pass( $ch->call );
 }
-
-# Contadores de nodos remotos
-my ($total, $registered, $with_passwd) = (0, 0, 0);
-foreach my $dxchan (@nodes) {
-    $total++;
-    $registered++  if reg($dxchan->call);
-    $with_passwd++ if pass($dxchan->call);
-}
-
-# Pie alineado
-push @out, " ", sprintf(
-    "Total:%5d  Register:%5d  Password:%5d",
-    $total, $registered, $with_passwd
-), " ";
-
-return (1, @out);
-
-# --- Subrutinas auxiliares ---
+push @out, ' ',
+    sprintf(
+    ' Total: %d  Local: %d  Remote: %d  RBN: %d  Registered: %d  Password: %d',
+    scalar(@all),    defined($local) ? 1 : 0,
+    scalar(@remote), scalar(@rbn), $registered, $with_passwd
+    ),
+    ' ';
+return ( 1, @out );
 
 sub format_node {
-    my ($dxchan, $now, $force_sort) = @_;
-
-    my $call = $dxchan->call;
-    my $isreg  = reg($call)  ? "R" : " ";
-    my $ispass = pass($call) ? "P" : " ";
-    my $sort   = "    ";
-
-    $sort = $force_sort if defined $force_sort;
-    unless ($force_sort) {
-        $sort = "DXSP" if $dxchan->is_spider;
-        $sort = "CLX "  if $dxchan->is_clx;
-        $sort = "DXNT" if $dxchan->is_dxnet;
-        $sort = "AR-C" if $dxchan->is_arcluster;
-        $sort = "AK1A" if $dxchan->is_ak1a;
-        $sort = "CCCL" if $dxchan->is_ccluster;
+    my ( $ch, $now, $show_ip ) = @_;
+    my $call = $ch->call;
+    my $r    = reg($call)  ? 'R' : ' ';
+    my $p    = pass($call) ? 'P' : ' ';
+    my $kind = 'NODE';
+    if ( $ch->is_rbn ) { $kind = 'NODE RBN' }
+    else {
+        $kind = 'NODE DXSP' if $ch->is_spider;
+        $kind = 'NODE CLX'  if $ch->is_clx;
+        $kind = 'NODE DXNT' if $ch->is_dxnet;
+        $kind = 'NODE AR-C' if $ch->is_arcluster;
+        $kind = 'NODE AK1A' if $ch->is_ak1a;
+        $kind = 'NODE CCCL' if $ch->is_ccluster;
     }
-
-    my $delta = $now - $dxchan->startt;
-    my $time_on = sprintf("%3d d%3d h %3d m",
-        int($delta / 86400),
-        int(($delta % 86400) / 3600),
-        int(($delta % 3600) / 60)
-    );
-
-    return sprintf(" %-9s  $isreg $ispass  NODE $sort $time_on", $call);
+    my $elapsed = $now - ( $ch->startt || $now );
+    $elapsed = 0 if $elapsed < 0;
+    my $uptime = sprintf( '%dd %02dh %02dm',
+        int( $elapsed / 86400 ),
+        int( $elapsed / 3600 ) % 24,
+        int( $elapsed / 60 ) % 60 );
+    my $row = sprintf( ' %-12s %1s %1s  %-9s  %-12s', $call, $r, $p, $kind, $uptime );
+    $row .= '  ' . channel_ip($ch) if $show_ip;
+    return $row;
 }
 
 sub reg {
-    my $call = shift;
-    my $ref = DXUser::get_current(uc $call);
-    return defined $ref && defined $ref->{registered} && $ref->{registered} eq "1";
+    my $ref = DXUser::get_current( uc shift );
+    return defined $ref && defined $ref->{registered} && $ref->{registered} eq '1';
 }
 
 sub pass {
-    my $call = shift;
-    my $ref = DXUser::get_current(uc $call);
-    return defined $ref && defined $ref->{passwd};
+    my $ref = DXUser::get_current( uc shift );
+    return defined $ref && defined $ref->{passwd} && length $ref->{passwd};
+}
+
+sub channel_ip {
+    my $ip = shift->{hostname};
+    return defined $ip && length $ip ? $ip : '-';
 }
