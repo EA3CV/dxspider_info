@@ -14,16 +14,17 @@
 # Run as root; DXSpider itself runs under its configured account.
 #
 # Usage (from a directory outside the DXSpider installation):
-#   perl dxspider-manager.pl          # Preview / preparation mode
-#   perl dxspider-manager.pl --live   # Interactive operations with confirmation
+#   perl dxspider-manager.pl          # Interactive production operations as root
+#   perl dxspider-manager.pl --preview # Preview / preparation only
+#   perl dxspider-manager.pl --live   # Explicit production mode (compatibility)
 #   perl dxspider-manager.pl --help   # Command-line help
 #
 # Live operations require an interactive terminal and explicit confirmation.
 # Operation logs: /var/log/dxs-manager/
 #
-# Kin EA3CV v1.0
+# DXSpider (C) Dirk Koopman G1TLH
+# Kin EA3CV v1.1 20261125
 #
-
 
 use 5.016001;
 use strict;
@@ -44,9 +45,10 @@ use POSIX qw(WNOHANG setsid);
 use Time::HiRes qw(sleep);
 use Errno qw(ENOENT);
 
-use constant VERSION => '7.0';
+use constant VERSION => '1.1';
 
 my $live_requested = 0;
+my $preview_requested = 0;
 my $live_enabled = 0;
 sub LIVE_ENABLED { return $live_enabled; }
 my @persistent = qw(local local_data local_cmd filter connect scripts);
@@ -64,6 +66,7 @@ my @scan_roots;
 Getopt::Long::Configure(qw(no_auto_abbrev no_ignore_case));
 GetOptions(
     'live'                  => \$live_requested,
+     'preview'               => \$preview_requested,
     'scan-root=s@'          => \@scan_roots,
     'mode=s'                => \$mode,
     'installation=s'        => \$installation,
@@ -4027,7 +4030,7 @@ sub ui_section {
     print {$ui_log} "\n=== SCREEN: $label ===\n" if $ui_log;
     if ($clear && ui_screen_enabled()) {
         print "\e[2J\e[H", ("=" x 62), "\n DXSpider Manager ", VERSION, "\n", ("=" x 62), "\n";
-        print LIVE_ENABLED ? " LIVE - explicit confirmation required\n" : " PREVIEW - production actions disabled\n";
+        print LIVE_ENABLED ? " LIVE\n" : " PREVIEW - production actions disabled\n";
         my ($os) = optional_read('/etc/os-release') =~ /^PRETTY_NAME="?([^"\n]+)"?$/m;
         print " OS: ", ui_safe($os//'unknown'), " | Perl: $^V\n";
     }
@@ -4969,7 +4972,7 @@ sub ui_restore {
         ui_section('INTERRUPTED UPDATE OR RESTORE');
         print '  Transaction: ', ui_safe($previous->{state}), "\n  Workspace: ", ui_safe($w), "\n";
         if (!LIVE_ENABLED) {
-            print "  Production recovery is disabled in this release. No changes made.\n";
+            print "  Production recovery is unavailable in preview mode. No changes made.\n";
             return 1;
         }
         return 0 unless ui_yes('Recover the previous installation and service state?', 0);
@@ -6358,7 +6361,7 @@ sub interactive {
     print "\n==============================================================\n";
     print " DXSpider Manager ", VERSION, " - Installation, update and restore\n";
     print "==============================================================\n";
-    print LIVE_ENABLED ? " LIVE - explicit confirmation required\n" : " PREVIEW - use --live to enable confirmed operations\n";
+    print LIVE_ENABLED ? " LIVE - explicit confirmation required\n" : " PREVIEW - preparation only\n";
     my ($os) = optional_read('/etc/os-release') =~  /^PRETTY_NAME="?([^"\n]+)"?$/m;
     print ' OS: ', ui_safe($os // 'unknown'), "\n Perl: $^V\n";
 
@@ -6395,7 +6398,7 @@ sub interactive {
             if ($action ne 'restore') {
                 print "  Select Restore to recover this installation before another operation.\n";
             } elsif (!LIVE_ENABLED) {
-                print "  Production recovery is disabled in this release. No changes made.\n";
+                print "  Production recovery is unavailable in preview mode. No changes made.\n";
             } elsif (ui_yes('Recover interrupted installation and retain its files?', 0)) {
                 my ($ok, $status) = ui_step('Recovering interrupted installation', sub {
                     my $guard = install_global_lock($state_dir);
@@ -6481,9 +6484,10 @@ sub interactive {
 
 sub usage {
     print <<'HELP';
-DXSpider Manager 7.0 — interactive install, update and restore
-  perl dxs-updater.pl                 Preview menu (no service actions)
-  perl dxs-updater.pl --live          Enable interactive operations; root and terminal required
+DXSpider Manager 1.1 — interactive install, update and restore
+  perl dxspider-manager.pl            Production menu; root and terminal required
+  perl dxspider-manager.pl --preview  Preparation only (no service actions)
+  perl dxspider-manager.pl --live     Explicit production mode (compatibility)
   --mode interactive [--scan-root ABSOLUTE_DIR] [--installation PATH]
   --mode host-plan --installation /spider --branch mojo|test [--backup] [--reserve-gib N]
   --mode integration-check --installation /spider --branch mojo|test [--check-remote] [--probe-config FILE]
@@ -6496,7 +6500,7 @@ DXSpider Manager 7.0 — interactive install, update and restore
   --mode systemd-fixture-cleanup --base /root/dxs-updater-systemd-UNIQUE/CASE
   --mode git-prepare-check --base /root/dxs-updater-git-UNIQUE --installation /spider --branch mojo|test
   --mode fixture-seed|fixture-prepare|fixture-update|fixture-recover|fixture-inspect|fixture-archive|fixture-stop --base ABSOLUTE_FIXTURE
-  --mode update|recover : disabled; use interactive --live and confirm
+  --mode update|recover : disabled; use the interactive menu and confirm
   --mode rehearse : disabled; no hot copy of real installation
 Only successful SQLite verification scratch is removed automatically. Fixture paths must be newly created, private and outside /spider and /tmp.
 HELP
@@ -6514,10 +6518,12 @@ fail('invalid observation port') if grep {$_<0||$_>65535} ($spider_port, $web_po
 fail('invalid branch') unless $branch eq 'mojo' || $branch eq 'test';
 fail('invalid reserve') unless $reserve >= 0 && $reserve <= 1000;
 fail('fault injection only in fixture') if length($fault) && $mode !~ /^fixture-/;
-if ($live_requested) {
-    fail('--live is restricted to the interactive menu') unless $mode eq 'interactive';
-    fail('--live requires root and an interactive terminal') unless $> == 0 && -t STDIN
-        && -t STDOUT;
+fail('--live and --preview are mutually exclusive') if $live_requested && $preview_requested;
+fail('--live and --preview are restricted to the interactive menu')
+    if ($live_requested || $preview_requested) && $mode ne 'interactive';
+if ($mode eq 'interactive' && !$preview_requested) {
+    fail('production menu requires root and an interactive terminal; use --preview for preparation')
+        unless $> == 0 && -t STDIN && -t STDOUT;
     $live_enabled = 1;
 }
 if ($mode eq 'interactive') {
