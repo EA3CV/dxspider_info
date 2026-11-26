@@ -24,7 +24,7 @@
 # Optional: --startup-timeout=N (seconds per readiness phase; default 120).
 #
 # DXSpider (C) Dirk Koopman G1TLH.
-# DXSpider Manager: Kin EA3CV - version 1.3 - 2026-11-26.
+# DXSpider Manager: Kin EA3CV - version 1.5 - 2026-11-26.
 #
 
 
@@ -47,11 +47,12 @@ use POSIX qw(WNOHANG setsid);
 use Time::HiRes qw(sleep clock_gettime CLOCK_MONOTONIC alarm);
 use Errno qw(ENOENT);
 
-use constant VERSION => '1.3';
+use constant VERSION => '1.5';
 
 my $live_requested = 0;
 my $preview_requested = 0;
 my $live_enabled = 0;
+my $normalize_update = 0; # explicitly approved, journaled candidate-only normalization
 sub LIVE_ENABLED { return $live_enabled; }
 my @persistent = qw(local local_data local_cmd filter connect scripts);
 my @backup_empty = map {"local_data/$_"} qw(debug log tmp wcy wwv);
@@ -281,64 +282,78 @@ sub tools_check {
 # that account. Refuse directory ACLs and external/non-enumerable NSS sources.
 # Root-owned ancestors remain subject to the original strict policy.
 sub private_sysop_group {
-    my ($path, $uid, $gid) = @_;
-    return 0 unless $uid > 0 && $gid > 0;
+    my ($path, $uid, $gid, $reason, $root_group_check) = @_;
+    my $reject = sub { $$reason = $_[0] if $reason; return 0; };
+    return $reject->('invalid account for private group verification')
+        unless ($uid > 0 && $gid > 0) || ($root_group_check && $uid == 0 && $gid >= 0);
     my @pw = getpwuid($uid);
     my @gr = getgrgid($gid);
-    return 0 unless @pw && @gr;
-    # A group is private by effective membership, not by its name or whether
-    # it is the account's primary or supplementary group (e.g. sysop:spider).
+    return $reject->('account or group not resolved') unless @pw && @gr;
     my $nss = optional_read('/etc/nsswitch.conf');
-    for my $db (qw(passwd group)) {
+    for my $db (qw(passwd group initgroups)) {
         my @rules = $nss =~ /^[ \t]*\Q$db\E[ \t]*:[ \t]*([^#\n]+)/mg;
-        return 0 unless @rules == 1 && $rules[0] =~ /\Afiles(?:\s+systemd)?\s*\z/;
+        next if $db eq 'initgroups' && !@rules;
+        return $reject->("unsupported or ambiguous NSS $db rule: ".join('; ', @rules))
+            unless @rules == 1 && $rules[0] =~ /\A(?:files|compat)(?:\s+systemd)?\s*\z/;
+        if ($rules[0] =~ /\Acompat\b/) {
+            # Local compat is equivalent to files only with no NIS +/- entries.
+            my @files = $db eq 'initgroups' ? qw(passwd group) : ($db);
+            for my $file (@files) {
+                my $raw = optional_read("/etc/$file");
+                return $reject->("NSS compat $file cannot be proved local")
+                    unless length($raw) && $raw !~ /^[ \t]*[+-]/m;
+                my @extra = $nss =~ /^[ \t]*\Q${file}_compat\E[ \t]*:[ \t]*([^#\n]+)/mg;
+                return $reject->("external NSS ${file}_compat rule")
+                    if @extra && (@extra != 1 || $extra[0] !~ /\Afiles\s*\z/);
+            }
+        }
     }
-    my @init = $nss =~ /^[ \t]*initgroups[ \t]*:[ \t]*([^#\n]+)/mg;
-    return 0 if @init && (@init != 1 || $init[0] !~ /\Afiles(?:\s+systemd)?\s*\z/);
     my ($iok, $effective_groups) = capture_status('timeout', '10', 'id', '-G', '--', $pw[0]);
-    return 0 unless $iok && $effective_groups =~ /\A\d+(?:[ \t]+\d+)*\s*\z/
-        && grep {$_ == $gid} split /\s+/, $effective_groups;
+    return $reject->('cannot verify effective group membership')
+        unless $iok && $effective_groups =~ /\A\d+(?:[ \t]+\d+)*\s*\z/;
+    return $reject->("$pw[0] is not a member of $gr[0]")
+        unless $root_group_check || grep {$_ == $gid} split /\s+/, $effective_groups;
     my ($pok, $passwd) = capture_status('timeout', '10', 'getent', 'passwd');
     my ($gok, $groups) = capture_status('timeout', '10', 'getent', 'group');
-    return 0 unless $pok && $gok;
+    return $reject->('NSS account/group enumeration failed') unless $pok && $gok;
     my ($found_user, $found_group) = (0, 0);
     for my $line (split /\n/, $passwd) {
         my @f = split /:/, $line, -1;
-        return 0 unless @f == 7 && $f[2] =~ /\A\d+\z/ && $f[3] =~ /\A\d+\z/;
+        return $reject->('invalid passwd enumeration')
+            unless @f == 7 && $f[2] =~ /\A\d+\z/ && $f[3] =~ /\A\d+\z/;
         $found_user++ if $f[0] eq $pw[0] && $f[2] == $uid;
-        return 0 if $f[3] == $gid && $f[2] != $uid && $f[2] != 0;
+        return $reject->("foreign primary group member $f[0] (UID $f[2])")
+            if $f[3] == $gid && $f[2] != $uid && $f[2] != 0;
     }
     for my $line (split /\n/, $groups) {
         my @f = split /:/, $line, -1;
-        return 0 unless @f == 4 && $f[2] =~ /\A\d+\z/;
+        return $reject->('invalid group enumeration') unless @f == 4 && $f[2] =~ /\A\d+\z/;
         next unless $f[2] == $gid;
-        return 0 unless $f[0] eq $gr[0];
+        return $reject->('duplicate or ambiguous group name') unless $f[0] eq $gr[0];
         $found_group++;
         for my $member (grep {length} split /,/, $f[3]) {
             my @m = getpwnam($member);
-            return 0 unless @m && ($m[2] == $uid || $m[2] == 0);
+            return $reject->("foreign or unresolved supplementary group member $member")
+                unless @m && ($m[2] == $uid || $m[2] == 0);
         }
     }
-    return 0 unless $found_user == 1 && $found_group == 1;
-    # GNU ls marks extended ACLs (including default ACLs) with '+', and an
-    # unknown access method with '?'. Accept only the ordinary mode display.
-    # No getfacl dependency is needed on minimal Debian installations.
+    return $reject->('account/group enumeration incomplete or ambiguous')
+        unless $found_user == 1 && $found_group == 1;
     my ($lok, $listing) = capture_status('ls', '-ldn', '--color=never', '--', $path);
-    return 0 unless $lok && $listing =~ /\Ad[rwxstST-]{9} /;
-    # Also reject a running foreign process that retained the group after a
-    # membership change. The root and SYSOP identities are already trusted.
+    return $reject->('extended ACL or unverified access method on directory')
+        unless $lok && $listing =~ /\Ad[rwxstST-]{9}(?: |\. )/;
     for my $pid (all_pids()) {
         my $status = optional_read("/proc/$pid/status");
-        unless (length $status) {
-            return 0 if -d "/proc/$pid"; # existing but unreadable: fail closed
-            next; # process disappeared
-        }
         my ($uids) = $status =~ /^Uid:\s+([^\n]+)/m;
         my ($gids) = $status =~ /^Gid:\s+([^\n]+)/m;
         my ($supp) = $status =~ /^Groups:[ \t]*([^\n]*)/m;
-        return 0 unless defined($uids) && defined($gids) && defined($supp);
+        if (!defined($uids) || !defined($gids) || !defined($supp)) {
+            next unless -d "/proc/$pid";
+            return $reject->("cannot verify credentials of PID $pid");
+        }
         next unless grep {$_ == $gid} split /\s+/, "$gids $supp";
-        return 0 if grep {$_ != 0 && $_ != $uid} split /\s+/, $uids;
+        return $reject->("foreign process PID $pid retains group $gr[0]")
+            if grep {$_ != 0 && $_ != $uid} split /\s+/, $uids;
     }
     return 1;
 }
@@ -362,8 +377,9 @@ sub transaction_layout {
         fail("unsafe transaction ancestor $d")
             unless @st && S_ISDIR($st[2]) && !($st[2]&0002);
         if ($st[2]&0020) {
-            fail("unsafe transaction ancestor $d (group write is not private to SYSOP)")
-                unless $st[4] != 0 && private_sysop_group($d, $st[4], $st[5]);
+            my $reason = 'root-owned ancestor must not be group-writable';
+            fail("unsafe transaction ancestor $d ($reason)")
+                unless $st[4] != 0 && private_sysop_group($d, $st[4], $st[5], \$reason);
         }
         if (!defined($account) && $st[4] == 0) {
             $anchor = $d;
@@ -398,8 +414,8 @@ sub tree_work {
 # supervisor is killed. Signals to the supervisor are deferred during a phase.
 
 sub owner_file_call {
-    my ($cb) = @_;
-    return $cb->() unless $home_fs && !$fs_child;
+    my ($cb, $force_owner) = @_;
+    return $cb->() unless !$fs_child && ($home_fs || ($force_owner && $owner));
     fail('owner filesystem worker requires root and non-root account') unless $> == 0
         && defined($owner)
         && defined($group) && $owner>0 && $group>0;
@@ -521,8 +537,127 @@ sub owner_tree_preflight {
     return 1;
 }
 
+# Display observed identities without deriving runtime credentials from a HOME name.
+sub identity_stat {
+    my ($path, $directory) = @_;
+    return undef unless defined($path) && length($path);
+    my @st = lstat($path);
+    return undef unless @st && ($directory ? S_ISDIR($st[2]) : S_ISREG($st[2]));
+    return [0+$st[4], 0+$st[5]];
+}
+
+sub identity_unit {
+    my ($v) = @_;
+    return undef unless $v && unit_definition_ok($v);
+    my $u = $v->{User} || 'root';
+    my @pw = $u =~ /\A\d+\z/ ? getpwuid($u) : getpwnam($u);
+    return undef unless @pw;
+    my $g = $v->{Group}//'';
+    my @gr = !length($g) ? getgrgid($pw[3])
+        : $g =~ /\A\d+\z/ ? getgrgid($g) : getgrnam($g);
+    return undef unless @gr;
+    return [0+$pw[2], 0+$gr[2]];
+}
+
+sub installation_identity {
+    my ($path) = @_;
+    my ($inventory, $blocks) = service_inventory();
+    my $unit = $inventory->{spider};
+    my %processes;
+    if ($unit->{confirmed}) {
+        my $p = proc_info($unit->{MainPID});
+        $processes{$p->{pid}} = $p if $p && $p->{start} eq $unit->{pid_start};
+    }
+    for my $pid (all_pids()) {
+        my $p = proc_info($pid) or next;
+        next unless manual_tree_candidate($p, $path) || manual_cluster($p);
+        $processes{$pid} = $p;
+    }
+    my @p = values %processes;
+    my $process = @p == 1 ? [@{$p[0]}{qw(uid gid)}] : undef;
+    my $manual = @p == 1 && !$unit->{confirmed}
+        && manual_tree_candidate($p[0], $path);
+    my $service = identity_unit($unit);
+    my $file = identity_stat("$path/perl/cluster.pl", 0);
+    my $tree = identity_stat($path, 1);
+    my $target = $process // $service // $file;
+    my @account = $target ? getpwuid($target->[0]) : ();
+    my $home = @account ? identity_stat($account[7], 1) : undef;
+    my @errors = @$blocks;
+    push @errors, 'Multiple DXSpider processes detected' if @p > 1;
+    push @errors, 'Manual DXSpider candidate has an unsafe or non-quiescent systemd companion'
+        if $manual && !manual_companion_safe($unit);
+    push @errors, 'Active service identity is not verified'
+        if ($unit->{associated}//0) && ($unit->{ActiveState}//'') eq 'active' && !$unit->{confirmed};
+    push @errors, 'Configured service account could not be resolved'
+        if ($unit->{associated}//0) && ($unit->{LoadState}//'') eq 'loaded' && !$service;
+    push @errors, 'Installation account could not be resolved' unless $target && @account
+        && defined(getgrgid($target->[1]));
+    # Do not switch runtime identity or the recovery account behind the user's back.
+    for my $item (['Process', $process], ['Service', $service]) {
+        push @errors, "$item->[0] differs from proposed account; resolve identity before update"
+            if $target && $item->[1] && join(':', @{$item->[1]}) ne join(':', @$target);
+    }
+    return {columns => [$process, $service, $file, $tree, $home],
+        target => $target, home => @account ? $account[7] : '', errors => \@errors,
+        unit => $unit->{associated} ? $unit->{name} : undef,
+        unit_state => $unit->{ActiveState},
+        startup => @p > 1 ? 'Ambiguous' : $manual ? 'Manual candidate'
+            : $unit->{confirmed} ? 'systemd' : 'Not detected',
+        pid => @p == 1 ? $p[0]{pid} : undef};
+}
+
+sub identity_table {
+    my ($info) = @_;
+    my @names = qw(Process Service cluster.pl Installation home);
+    my (@users, @groups, @width);
+    for my $i (0..$#names) {
+        my $pair = $info->{columns}[$i];
+        push @users, $pair ? ui_safe(scalar(getpwuid($pair->[0]))//$pair->[0]) : '-';
+        push @groups, $pair ? ui_safe(scalar(getgrgid($pair->[1]))//$pair->[1]) : '-';
+        push @width, max_of(12, max_of(length($names[$i]),
+            max_of(length($users[$i]), length($groups[$i]))));
+    }
+    for my $row (['', @names], ['', map {'-' x $_} @width],
+        ['Own', @users], ['Group', @groups]) {
+        printf '%-8s  ', shift @$row;
+        for my $i (0..$#$row) {
+            printf '%-*s%s', $width[$i], $row->[$i], $i == $#$row ? "\n" : '    ';
+        }
+    }
+}
+
+sub ui_confirm_identity {
+    my ($info) = @_;
+    ui_section('INSTALLATION IDENTITY');
+    print '  Installation: ', ui_safe($root), "\n";
+    if (defined $info->{startup}) {
+        print '  Startup: ', ui_safe($info->{startup});
+        print ' (PID ', $info->{pid}, ')' if defined $info->{pid};
+        print "\n";
+    }
+    if ($info->{unit}) {
+        print '  Service: ', ui_safe($info->{unit});
+        print ' (', ui_safe($info->{unit_state}), ')' if defined $info->{unit_state};
+        print "\n";
+    }
+    print "  Manual restart requires separate launch and endpoint confirmation.\n"
+        if ($info->{startup}//'') eq 'Manual candidate';
+    print '  Account HOME: ', ui_safe($info->{home}), "\n\n";
+    identity_table($info);
+    print "\n  - = not detected or unavailable; HOME ownership is not installation ownership.\n";
+    if (@{$info->{errors}}) {
+        print '  BLOCK: ', ui_safe($_), "\n" for @{$info->{errors}};
+        return 0;
+    }
+    my ($uid, $gid) = @{$info->{target}};
+    print "\n  Proposed ownership: ", ui_safe(scalar(getpwuid($uid))//$uid), ':',
+        ui_safe(scalar(getgrgid($gid))//$gid), "\n";
+    return ui_yes('Is this information correct?', 1);
+}
+
 sub validate_root {
-    my ($p, $missing) = @_;
+    my ($p, $missing, $approved) = @_;
     path_check($p);
     my $parent = dirname($p);
     fail('noncanonical parent') unless (realpath($parent)//'') eq $parent;
@@ -538,7 +673,31 @@ sub validate_root {
         my @s = stat("$p/perl/cluster.pl");
         ($owner, $group) = @s[4, 5];
     }
-    my $layout = transaction_layout($p, $owner);
+    # A normalized transaction may retain an original cluster.pl with a
+    # different owner/group. Use its protected recorded account for recovery,
+    # not the metadata of whichever tree happens to be active after a crash.
+    my $layout = transaction_layout($p, undef);
+    my $journal_path = "$layout->{work}/journal.json";
+    my $saved;
+    if ($> == 0 && exists_path($journal_path)) {
+        protected_ancestors($layout->{work});
+        $saved = protected_json($journal_path);
+        fail('journal installation mismatch') unless ($saved->{root}//'') eq $p;
+    }
+    if ($approved) {
+        ($owner, $group) = @$approved;
+        if ($saved) {
+            fail('existing transaction uses a different account; resolve or archive it before changing ownership')
+                unless defined($saved->{owner}) && defined($saved->{group})
+                    && $saved->{owner} == $owner && $saved->{group} == $group;
+        }
+    } elsif ($saved && ($saved->{normalize_update} || $saved->{normalize_restore})) {
+        fail('invalid normalized journal account') unless defined($saved->{owner})
+            && defined($saved->{group}) && $saved->{owner} =~ /\A\d+\z/
+            && $saved->{group} =~ /\A\d+\z/;
+        ($owner, $group) = @$saved{qw(owner group)};
+    }
+    $layout = transaction_layout($p, $owner);
     $home_fs = $layout->{home};
     $home_anchor = $layout->{anchor};
     return $p;
@@ -833,7 +992,8 @@ sub capacity {
 
 sub as_owner {
     my @cmd = @_;
-    return @cmd if ($fixture && !$home_fs) || !defined($owner) || $owner == $>;
+    return @cmd if ($fixture && !$home_fs) || !defined($owner)
+        || ($owner == $> && (!defined($group) || $group == 0+$)));
     fail('cannot switch to installation owner') unless $> == 0;
     my $u = getpwuid($owner);
     my $g = getgrgid($group);
@@ -1301,6 +1461,10 @@ sub manifest {
         return owner_file_call(sub {manifest(@args)});
     }
     my ($r, @parts) = @_;
+    my $normalized = (@parts && $parts[0] eq ':normalized-owners') ? shift(@parts) : 0;
+    my $mode_neutral = (@parts && $parts[0] eq ':normalized-mode') ? shift(@parts) : 0;
+    my @ownership = $normalized ? ("--owner=$owner", "--group=$group") : ();
+    push @ownership, '--mode=0000' if $mode_neutral;
     my $filtered = (@parts && $parts[0] eq ':backup')?shift(@parts):0;
     my $prune = $filtered?backup_prune($r):undef;
     my %links;
@@ -1325,7 +1489,7 @@ sub manifest {
     }
     my @filters = $filtered?('--anchored', map {"--exclude=./$_/*"} @backup_empty):();
     my @c = ('tar', '--format=pax', '--sort=name', '--numeric-owner', '--acls', '--xattrs',
-        '--xattrs-include=*', '--selinux',
+        '--xattrs-include=*', '--selinux', @ownership,
         '--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime', @filters, '-C', $r,
         '-cf', '-', '--', @parts);
     open my $h, '-|', @c or fail('tar pipe');
@@ -1397,6 +1561,177 @@ sub copy_persistent {
         @persistent), "$b/");
     fail("metadata or content mismatch: $diff") if length $diff;
     return $new;
+}
+
+# Normalization is never performed in the running tree. Carry data through a
+# non-root worker, verify contents/metadata apart from the explicitly approved
+# UID/GID mapping, then apply a non-widening permission policy to the candidate.
+sub normalization_audit {
+    my ($tree) = @_;
+    if (!$fs_child && $owner) {
+        return owner_file_call(sub {normalization_audit($tree)}, 1);
+    }
+    no_mounts($tree);
+    my (%counts, %modes, @bad, @blocked);
+    my $total = 0;
+    my $not_preservable = 0;
+    my %groups = map {$_ => 1} split /\s+/, $);
+    my $dev = (stat($tree))[0];
+    my %links;
+    walk($tree, sub {
+        my ($path, $st) = @_;
+        ++$total;
+        ++$counts{"$st->[4]:$st->[5]"};
+        ++$modes{sprintf('%04o', $st->[2]&07777)};
+        ++$not_preservable if $owner && ($st->[4] != $owner || !$groups{$st->[5]});
+        if ($st->[4] != $owner || $st->[5] != $group) {
+            push @bad, {path => $path, uid => $st->[4], gid => $st->[5],
+                mode => sprintf('%04o', $st->[2]&07777)};
+        }
+        push @blocked, "unexpected foreign owner: $path"
+            if $st->[4] != $owner && $st->[4] != 0;
+        if (S_ISDIR($st->[2])) {
+            push @blocked, "unreadable/unsearchable directory: $path" unless -r $path && -x $path;
+        } elsif (S_ISREG($st->[2])) {
+            push @blocked, "unreadable file: $path" unless -r $path;
+            push @blocked, "privileged executable requires review: $path" if $st->[2]&06000;
+        }
+        if (!S_ISDIR($st->[2]) && $st->[3] > 1) {
+            my $key = "$st->[0]:$st->[1]";
+            $links{$key}[0]++;
+            $links{$key}[1] = $st->[3];
+        }
+    }, $dev);
+    push @blocked, 'hardlink outside installation' if grep {$_->[0] != $_->[1]} values %links;
+    print "NORMALIZATION AUDIT entries=$total different=", scalar(@bad), "\n";
+    print '  ', $_, ': ', $counts{$_}, "\n" for sort keys %counts;
+    print '  MODE ', $_, ': ', $modes{$_}, "\n" for sort keys %modes;
+    print '  DIFFERENT ', $json->encode($_), "\n" for @bad;
+    print '  BLOCK ', $json->encode($_), "\n" for @blocked;
+    return {total => $total, counts => \%counts, different => scalar(@bad),
+        modes => \%modes, not_preservable => $not_preservable, blocked => scalar(@blocked)};
+}
+
+sub normalization_preflight {
+    my ($tree, $additional_backup) = @_;
+    if (!$owner) {
+        my $reason = '';
+        fail("root-run normalization requires a root-only target group ($reason)")
+            unless private_sysop_group($tree, 0, $group, \$reason, 1);
+    }
+    my $audit = normalization_audit($tree);
+    fail('normalization blocked; review ownership and access audit in log') if $audit->{blocked};
+    fail('exact additional backup cannot be preserved by non-root worker; original tree retained; choose no additional backup or cancel')
+        if $additional_backup && $audit->{not_preservable};
+    return $audit;
+}
+
+sub candidate_mode {
+    my ($mode, $fresh) = @_;
+    # Existing data, credentials, ACL masks and Git metadata must never acquire
+    # additional access bits. Only directories receive SGID for group inheritance.
+    my $bits = $mode&07777;
+    if (S_ISDIR($mode)) {
+        return 02775 if $fresh && $bits == 0755;
+        return (02775 & $bits) | 02000;
+    }
+    my $limit = ($mode&0111) ? 0775 : 0664;
+    return $limit if $fresh && ($bits == 0644 || $bits == 0755);
+    return ($bits & $limit);
+}
+
+sub normalize_candidate_modes {
+    my ($tree, $fresh_code) = @_;
+    return owner_file_call(sub {normalize_candidate_modes($tree, $fresh_code)}, 1)
+        if !$fs_child && $owner;
+    no_mounts($tree);
+    manifest($tree, '.');
+    my @changes;
+    walk($tree, sub {
+        my ($path, $st) = @_;
+        fail("candidate ownership mismatch: $path") unless $st->[4] == $owner && $st->[5] == $group;
+        return if S_ISLNK($st->[2]);
+        my $rel = substr($path, length($tree));
+        my $fresh = $fresh_code && $owner && length($rel)
+            && $rel !~ m{^/(?:\.git|local|local_data|local_cmd|filter|connect|scripts)(?:/|$)};
+        return if $rel =~ m{^/\.git(?:/|$)}; # Git metadata permissions preserved
+        my $mode = candidate_mode($st->[2], $fresh);
+        return if $mode == ($st->[2]&07777);
+        # Do not alter an extended ACL's effective mask. Keep its original mode.
+        my ($ok, $listing) = capture_status('ls', '-ldn', '--color=never', '--', $path);
+        fail("cannot inspect candidate ACL: $path") unless $ok;
+        return if $listing =~ /\A.[rwxstST-]{9}\+/;
+        fail("unknown candidate access method: $path")
+            unless $listing =~ /\A.[rwxstST-]{9}(?: |\. )/;
+        push @changes, [$path, $mode, @$st[0, 1, 3, 4, 5]];
+    }, (stat($tree))[0]);
+    for my $item (reverse @changes) {
+        my ($path, $mode, @expected) = @$item;
+        sysopen my $fh, $path, O_RDONLY|O_NOFOLLOW|O_NONBLOCK
+            or fail("open candidate for permissions $path: $!");
+        my @now = stat($fh);
+        fail("candidate entry changed before permission assignment: $path") unless @now
+            && (S_ISREG($now[2]) || S_ISDIR($now[2]))
+            && join(':', @now[0, 1, 3, 4, 5]) eq join(':', @expected);
+        chmod($mode, $fh) == 1 or fail("candidate mode $path: $!");
+        close $fh or fail("close candidate $path: $!");
+    }
+    print 'NORMALIZATION candidate permissions changed=', scalar(@changes), "\n";
+    return 1;
+}
+
+sub copy_normalized_persistent {
+    my ($a, $b) = @_;
+    return owner_file_call(sub {copy_normalized_persistent($a, $b)}, 1)
+        if !$fs_child && $owner;
+    my $before = manifest($a, @persistent);
+    my $mapped = manifest($a, ':normalized-owners', @persistent);
+    for my $part (@persistent) {
+        fail("unsafe persistent source $part") unless -d "$a/$part" && !-l "$a/$part";
+        remove_candidate_part("$b/$part");
+    }
+    inject('copy');
+    my @args = ('--numeric-ids', "--chown=$owner:$group", '--modify-window=-1', '--',
+        map("$a/./$_", @persistent), "$b/");
+    run('rsync', '-aHAXR', @args);
+    fail('source persistence changed during normalized copy') unless manifest($a, @persistent) eq $before;
+    fail('normalized copy content or metadata mismatch') unless manifest($b, @persistent) eq $mapped;
+    my $diff = capture('rsync', '-aHAXRnic', '--delete', @args);
+    fail("normalized rsync verification mismatch: $diff") if length $diff;
+    # Preserve the old tree's root access mode and ACL; do not transfer any
+    # of its nonpersistent entries. rsync -d operates on this directory only.
+    my @root_args = ('--numeric-ids', "--chown=$owner:$group",
+        '--modify-window=-1', '--exclude=*', '--', "$a/", "$b/");
+    run('rsync', '-dptAX', @root_args);
+    my $root_diff = capture('rsync', '-dptAXnic', @root_args);
+    fail("candidate root metadata mismatch: $root_diff") if length $root_diff;
+    my @src = stat($a);
+    my @dst = stat($b);
+    fail('candidate root access metadata mismatch') unless @src && @dst
+        && ($src[2]&07777) == ($dst[2]&07777) && $dst[4] == $owner && $dst[5] == $group;
+    return {source_sha => $before, candidate_sha => $mapped};
+}
+
+sub copy_normalized_restore {
+    my ($source, $dest, $sha) = @_;
+    return owner_file_call(sub {copy_normalized_restore($source, $dest, $sha)}, 1)
+        if !$fs_child && $owner;
+    fail('restore candidate already exists') if exists_path($dest);
+    fail('restore point changed') unless manifest($source, '.') eq $sha;
+    my $mapped = manifest($source, ':normalized-owners', '.');
+    mkdir($dest, 0700) or fail("restore candidate directory: $!");
+    my @args = ('--numeric-ids', "--chown=$owner:$group", '--modify-window=-1', '--',
+        "$source/", "$dest/");
+    run('rsync', '-aHAX', @args);
+    fail('normalized restore copy mismatch') unless manifest($dest, '.') eq $mapped
+        && manifest($source, '.') eq $sha;
+    my $diff = capture('rsync', '-aHAXnic', '--delete', @args);
+    fail("normalized restore metadata mismatch: $diff") if length $diff;
+    my $content = manifest($dest, ':normalized-mode', '.');
+    normalize_candidate_modes($dest, 0);
+    fail('restore content changed during permission normalization')
+        unless manifest($dest, ':normalized-mode', '.') eq $content;
+    return manifest($dest, '.');
 }
 
 sub sqlite_engine {
@@ -1799,6 +2134,16 @@ sub unit_stopped {
         && !keys %{unit_members($v)})?1:0;
 }
 
+# An installed but stopped/failed unit must not take precedence over a
+# manual instance. Its definition and empty cgroup are still mandatory.
+sub manual_companion_safe {
+    my ($v) = @_;
+    return 0 unless $v->{ok};
+    my $load = $v->{LoadState}//'';
+    return 0 unless $load eq 'not-found' || unit_definition_ok($v);
+    return unit_stopped($v);
+}
+
 sub unit_identity {
     my ($v) = @_;
     return join(':',
@@ -1929,9 +2274,26 @@ sub manual_cluster {
     return defined($resolved) && $resolved eq "$root/perl/cluster.pl" ? 1:0;
 }
 
+# cluster.pl changes cwd to $root after initialization. Relative argv then
+# cannot be resolved against the current cwd as proof of the original exec.
+# Recognize only the exact supported launch shape in this installation;
+# this is discovery evidence, NOT an authorization to signal or restart.
+sub manual_tree_candidate {
+    my ($p, $tree) = @_;
+    return 0 unless manual_candidate($p);
+    my $arg = $p->{argv}[-1];
+    return 0 unless @{$p->{argv}} == 2;
+    return 0 unless $p->{cwd} eq $tree || $p->{cwd} eq "$tree/perl";
+    return 0 unless $arg eq './cluster.pl' || $arg eq 'cluster.pl'
+        || $arg eq "$tree/perl/cluster.pl";
+    return 0 unless -f "$tree/perl/cluster.pl" && !-l "$tree/perl"
+        && !-l "$tree/perl/cluster.pl";
+    return (realpath("$tree/perl/cluster.pl")//'') eq "$tree/perl/cluster.pl";
+}
+
 sub manual_launch_match {
     my ($p) = @_;
-    return 0 unless length($manual_launch_dir) && manual_candidate($p);
+    return 0 unless length($manual_launch_dir) && manual_tree_candidate($p, $root);
     return 0 unless $manual_launch_dir eq "$root/perl"
         && (realpath($manual_launch_dir)//'') eq $manual_launch_dir;
     return 0 unless $p->{cwd} eq $root || $p->{cwd} eq $manual_launch_dir;
@@ -2101,8 +2463,7 @@ sub integration_check {
                 };
             }
             elsif ($r eq 'spider' && @manual == 1
-                && ($v->{LoadState}//'') =~ /\A(?:loaded|not-found)\z/
-                && ($v->{ActiveState}//'') eq 'inactive' && unit_stopped($v)) {
+                && manual_companion_safe($v)) {
                 my $p = $manual[0];
                 my $id = manual_probe_identity($p);
                 $known = {$p->{pid} => $p->{start}};
@@ -2137,7 +2498,7 @@ sub integration_check {
             my $ok = eval{
                 if ($v->{confirmed}) {
                     probe_unit($r, $probes->{$r}, $v)
-                } elsif ($r eq 'spider' && @manual == 1 && $v->{ok} && unit_stopped($v)) {
+                } elsif ($r eq 'spider' && @manual == 1 && manual_companion_safe($v)) {
                     manual_contract($manual[0], $probes->{$r})
                 } else {
                     fail('no confirmed running service')
@@ -2549,10 +2910,10 @@ sub manual_unit_safe {
     my ($s) = @_;
     return if $fixture;
     my $v = unit_info('spider', $s->{unit_name});
-    fail('DXSpider systemd state changed during manual transaction') unless $v->{ok}
-        && ($v->{LoadState}//'') eq $s->{unit_load} && unit_stopped($v)
-        && ($s->{unit_load} eq 'not-found' || (unit_definition_ok($v)
-        && same($v->{unit_sha}, $s->{unit_sha})));
+    fail('DXSpider systemd state changed during manual transaction')
+        unless manual_companion_safe($v)
+        && ($v->{LoadState}//'') eq $s->{unit_load}
+        && ($s->{unit_load} eq 'not-found' || same($v->{unit_sha}, $s->{unit_sha}));
 }
 
 sub manual_stop {
@@ -2868,10 +3229,23 @@ sub service_plan {
             my $exists = ($v->{LoadState}//'') eq 'loaded';
             my $active = $exists && ($v->{ActiveState}//'') eq 'active';
             my $desired = $exists && ($r ne 'spider' || $active);
-            fail("unsafe unit state $r") unless $v->{ok} && ((!$exists
-                && ($v->{LoadState}//'') eq 'not-found' && unit_stopped($v)) || ($exists
-                && unit_definition_ok($v) && (($active && $v->{confirmed})
-                || (($v->{ActiveState}//'') eq 'inactive' && unit_stopped($v)))));
+            # The manual branch uses the same quiescent companion policy as
+            # discovery, preflight and the lifecycle adapters. A failed unit
+            # is not a failed manual daemon. Never relax other unit roles.
+            if ($r eq 'spider' && @manual) {
+                fail('manual and systemd DXSpider conflict or unsafe companion')
+                    unless manual_companion_safe($v);
+            } else {
+                fail("unsafe unit state $r") unless $v->{ok} && ((!$exists
+                    && ($v->{LoadState}//'') eq 'not-found' && unit_stopped($v)) || ($exists
+                    && unit_definition_ok($v) && (($active && $v->{confirmed})
+                    || (($v->{ActiveState}//'') eq 'inactive' && unit_stopped($v)))));
+            }
+            if ($r eq 'spider' && ($j->{normalize_update} || $j->{normalize_restore}) && $exists) {
+                my $id = identity_unit($v);
+                fail('DXSpider service account changed since identity confirmation') unless $id
+                    && $id->[0] == $owner && $id->[1] == $group;
+            }
             if ($r eq 'spider' && @manual) {
                 fail('manual and systemd DXSpider conflict') if $active;
                 fail('manual functional probe required') unless $probes->{$r};
@@ -2914,7 +3288,8 @@ sub prepare {
     }
     fail('missing or unsafe DXVars.pm') unless -f "$root/local/DXVars.pm"
         && !-l "$root/local/DXVars.pm";
-    owner_tree_preflight($root);
+    if ($normalize_update) { normalization_preflight($root, $backup); }
+    else { owner_tree_preflight($root); }
     my $dirty = local_changes($root);
     if (length($dirty)) {
         print "LOCAL CHANGES outside persistence: ",
@@ -2927,6 +3302,7 @@ sub prepare {
         branch => $branch, old_id => ident($root), backup => $backup?1:0, reserve => $reserve,
         dirty_sha => local_fingerprint($root, $dirty), owner => $owner, group => $group};
     $j->{home_layout} = 1 if $home_fs;
+    $j->{normalize_update} = 1 if $normalize_update;
     checkpoint('PLANNED');
     stage_git();
     capacity(0);
@@ -3084,7 +3460,9 @@ sub restore_policy {
 sub activate {
     fail('production activation disabled') unless $fixture || LIVE_ENABLED;
     my $tw = tree_work();
-    owner_tree_preflight($root);
+    my $normalize = $j->{normalize_update} && ($j->{operation}//'update') eq 'update';
+    if ($normalize || $j->{normalize_restore}) { normalization_preflight($root, $j->{backup}); }
+    else { owner_tree_preflight($root); }
     fail('not staged') unless $j->{state} eq 'STAGED';
     fail('source replaced') unless same(ident($root), $j->{old_id});
     fail('candidate replaced') unless same(ident("$tw/candidate"), $j->{new_id});
@@ -3132,7 +3510,8 @@ sub activate {
     }quiescent();
     no_mounts($root);
     no_mounts("$tw/candidate");
-    owner_tree_preflight($root);
+    if ($normalize || $j->{normalize_restore}) { normalization_preflight($root, $j->{backup}); }
+    else { owner_tree_preflight($root); }
     checkpoint('QUIESCENT');
     inject('crash-quiescent');
     capacity(0, 1);
@@ -3144,7 +3523,17 @@ sub activate {
         ui_event('Using the selected historical data; current tree will be retained');
     } else {
         ui_event("Copying and verifying the six persistent directories");
-        $j->{persist_sha} = copy_persistent($root, $candidate);
+        if ($normalize) {
+            my $copy = copy_normalized_persistent($root, $candidate);
+            $j->{source_persist_sha} = $copy->{source_sha};
+            my $content = manifest($candidate, ':normalized-mode', @persistent);
+            normalize_candidate_modes($candidate, 1);
+            fail('persistent content changed during permission normalization')
+                unless manifest($candidate, ':normalized-mode', @persistent) eq $content;
+            $j->{persist_sha} = manifest($candidate, @persistent);
+        } else {
+            $j->{persist_sha} = copy_persistent($root, $candidate);
+        }
     }
     quiescent();
     ui_event("Checking SQLite integrity");
@@ -3153,7 +3542,7 @@ sub activate {
         @persistent) eq $j->{persist_sha};
     if (($j->{operation}//'update') ne 'restore') {
         fail('original persistence changed after copy') unless manifest($root,
-        @persistent) eq $j->{persist_sha};
+        @persistent) eq ($j->{source_persist_sha}//$j->{persist_sha});
         # Upstream data and nonpersistent source code must stay from the new HEAD.
         my $delta = local_changes($candidate);
         fail('new source code changed') if length $delta;
@@ -3164,12 +3553,14 @@ sub activate {
         run(git($candidate, 'fsck', '--full', '--no-dangling'));
         fail('candidate Git version metadata changed')
         unless $json->encode(version_identity($candidate)) eq $json->encode($j->{git_version_metadata});
-        owner_file_call(sub {
-            my @s = stat($root);
-            chown($s[4], $s[5], $candidate) == 1 or fail('candidate root owner');
-            chmod($s[2]&07777, $candidate) or fail('candidate root mode');
-            return 1;
-        });
+        unless ($normalize) {
+            owner_file_call(sub {
+                my @s = stat($root);
+                chown($s[4], $s[5], $candidate) == 1 or fail('candidate root owner');
+                chmod($s[2]&07777, $candidate) or fail('candidate root mode');
+                return 1;
+            });
+        }
     } else {
         restore_candidate_check();
     }
@@ -3198,7 +3589,7 @@ sub activate {
     fail('original changed before activation') unless manifest($root, '.') eq $j->{old_sha};
     fail('source persistence no longer equals verified copy')
         if ($j->{operation}//'update') ne 'restore' && manifest($root,
-        @persistent) ne $j->{persist_sha};
+        @persistent) ne ($j->{source_persist_sha}//$j->{persist_sha});
     ui_event('Activating candidate; retaining original');
     checkpoint('ACTIVATING');
     inject('rename-old');
@@ -3263,7 +3654,7 @@ sub recover_tx {
         fail('missing real cluster.pl in original tree') unless -f "$tw/old/perl/cluster.pl"
             && !-l "$tw/old/perl" && !-l "$tw/old/perl/cluster.pl";
         my @st = stat("$tw/old/perl/cluster.pl");
-        ($owner, $group) = @st[4, 5];
+        ($owner, $group) = @st[4, 5] unless $j->{normalize_update} || $j->{normalize_restore};
     }
     fail('missing initial service policy') unless ref($j->{services}) eq 'HASH';
     # Resolve actual directory identities first, including interruption between
@@ -4219,7 +4610,7 @@ sub git_prepare_check {
 }
 
 # Operator interface. The existing engine remains the only mutation path.
-# This release is deliberately a preview: no service stop/start or restore.
+# Preview never mutates the active installation; live operations require consent.
 my ($ui_log, $ui_console, $ui_logpath);
 my %ui_label = (spider => 'DXSpider', web => 'DXWeb', admin => 'DXWeb Admin');
 
@@ -4787,7 +5178,7 @@ sub ui_services {
     # the engine's manual_contract will still verify it before any future action.
     for my $q(unknown_writers($known, $root)) {
         my $p = proc_info($q->[0]) or next;
-        if (manual_candidate($p) && under($p->{cwd}, $root)) {
+        if (manual_tree_candidate($p, $root)) {
             push @manual, $p
         } else {
             push @other, "PID $q->[0] ($q->[1])"
@@ -4810,17 +5201,18 @@ sub ui_services {
             push @block, "$label unit inventory unavailable"
         }
         elsif ($r eq 'spider' && @manual) {
-            if (@manual == 1 && $active ne 'active') {
+            if (@manual == 1 && manual_companion_safe($v)) {
                 $o->{state} = "Running manually (PID $manual[0]{pid})";
                 $o->{after} = 'Restart manually (requires confirmed launch contract)';
                 $o->{manual} = 1;
+                $o->{companion_state} = $active;
                 $o->{manual_unit_guard} = {load => $v->{LoadState}, sha => $v->{unit_sha},
                     identity => unit_identity($v)};
                 $o->{process} = $manual[0];
                 $o->{ports} = [ui_ports({$manual[0]{pid} => $manual[0]{start}})]
             } else {
-                $o->{state} = 'Ambiguous manual/systemd processes';
-                push @block, 'DXSpider process identity ambiguous'
+                $o->{state} = 'Ambiguous manual/systemd processes or unsafe companion unit';
+                push @block, 'DXSpider process identity or companion unit not verified'
             }
         }
         elsif ($load eq 'not-found') {
@@ -4859,6 +5251,9 @@ sub ui_service_table {
         $state =~ s/\(systemd, PID \d+\)/(systemd)/;
         printf "  %-14s %s\n", $ui_label{$r}, $state;
         print "                 Unit: $x->{unit}\n" if $x->{unit_info} && $x->{unit};
+        if ($x->{manual} && ($x->{manual_unit_guard}{load}//'') eq 'loaded') {
+            print "                 Unit: $x->{unit} ($x->{companion_state}; left unchanged)\n";
+        }
         print "                 After update: $x->{after}\n"
     }
     for my $b(@{$s->{block}}) {
@@ -5160,7 +5555,8 @@ sub verify_restore_point {
         && !-l "$path/perl"
         && !-l "$path/perl/cluster.pl";
     my @s = stat("$path/perl/cluster.pl");
-    fail('restore point belongs to a different account') unless $s[4] == $owner && $s[5] == $group;
+    fail('restore point belongs to a different account') unless ($s[4] == $owner && $s[5] == $group)
+        || ($point->{kind} eq 'old' && ($s[4] == $owner || $s[4] == 0));
     if ($point->{kind} eq 'backup') {
         for my $d (@backup_empty) {
             next unless exists_path("$path/$d");
@@ -5188,7 +5584,8 @@ sub restore_candidate_check {
     }
     my $path = "$work/candidate";
     fail('restore candidate identity changed') unless same(ident($path), $j->{new_id});
-    fail('restore candidate manifest changed') unless manifest($path, '.') eq $j->{restore_sha};
+    fail('restore candidate manifest changed') unless manifest($path, '.') eq
+        ($j->{restore_candidate_sha}//$j->{restore_sha});
     fail('restore revision changed') unless git_value($path, 'rev-parse', 'HEAD') eq $j->{head}
         && git_value($path, 'symbolic-ref', '--short', 'HEAD') eq $j->{branch};
     fail('restore version metadata changed')
@@ -5196,7 +5593,7 @@ sub restore_candidate_check {
 }
 
 sub restore_prepare {
-    my ($point) = @_;
+    my ($point, $normalize_restore) = @_;
     # Caller holds the stable installation lock. Re-discover and revalidate;
     # do not trust a path from an interactive selection or CLI argument alone.
     if ($point->{kind} eq 'legacy') {
@@ -5212,8 +5609,13 @@ sub restore_prepare {
     }
     tools_check();
     no_mounts($root);
-    owner_tree_preflight($root);
-    owner_tree_preflight($point->{path});
+    if ($normalize_restore) {
+        normalization_preflight($root, 0);
+        normalization_preflight($point->{path}, 0);
+    } else {
+        owner_tree_preflight($root);
+        owner_tree_preflight($point->{path});
+    }
     my $sha = verify_restore_point($point);
     my $size = inventory_sizes($point->{path}, 1, 1, '.');
     my ($mb, $mn) = capacity_margin($size->{bytes}+$size->{sqlite_bytes},
@@ -5242,8 +5644,13 @@ sub restore_prepare {
     $j->{home_layout} = 1 if $home_fs;
     checkpoint('PLANNED');
     my $tw = tree_work();
-    owner_file_call(sub {run('cp', '-a', '--preserve=all', '--', $point->{path}, "$tw/candidate");
-        return 1;});
+    if ($normalize_restore) {
+        $j->{normalize_restore} = 1;
+        $j->{restore_candidate_sha} = copy_normalized_restore($point->{path}, "$tw/candidate", $sha);
+    } else {
+        owner_file_call(sub {run('cp', '-a', '--preserve=all', '--', $point->{path}, "$tw/candidate");
+            return 1;});
+    }
     $j->{new_id} = ident("$tw/candidate");
     restore_candidate_check();
     fail('restore source changed during copy') unless verify_restore_point($point) eq $sha;
@@ -5373,6 +5780,20 @@ sub ui_restore {
     print '  Restore source: ', ui_safe($p->{path}), "\n";
     print "  Bash backup: integrity baseline established now, not at backup creation.\n  Historical service files will not be installed; current startup policy applies.\n" if $p->{kind} eq 'legacy';
     print "\n  Historical configuration and user data will replace current data.\n  The current tree and selected restore point will be retained.\n";
+    my $normalize_restore = 0;
+    if ($home_fs) {
+        my ($aok, $audit) = ui_step('Checking historical ownership', sub {
+            my $current = normalization_preflight($root, 0);
+            my $historical = normalization_preflight($p->{path}, 0);
+            return {different => $current->{different} + $historical->{different}};
+        });
+        return 1 unless $aok;
+        if ($audit->{different}) {
+            print "  Current or historical tree has different owners/groups; both originals remain unchanged.\n";
+            return 0 unless ui_yes('Normalize ownership and safe permissions in the restore copy?', 0);
+            $normalize_restore = 1;
+        }
+    }
     if (!LIVE_ENABLED) {
         print "\n  Production restoration is not enabled. Only preparation is available.\n";
         return 0 unless ui_yes('Prepare and verify the restore candidate?', 0);
@@ -5389,7 +5810,7 @@ sub ui_restore {
     }
     my ($prepared) = ui_step('Preparing restore candidate', sub {
         acquire(1);
-        restore_prepare($p);
+        restore_prepare($p, $normalize_restore);
         return 1;
     });
     close $lock if $lock;
@@ -5520,12 +5941,33 @@ sub ui_update_plan {
     ui_section('2. BACKUP AND SPACE');
     print '  Installed: ', ui_safe($v->{branch}), ' / ', ui_safe($v->{describe}),
         "\n  Target: $branch / ", substr(($a//$b), 0, 12), "\n\n";
-    $backup = ui_yes('Create an additional backup? (Recommended)', 1);
+    if ($normalize_update) {
+        my ($aok, $audit) = ui_step('Auditing ownership and access', sub {
+            normalization_preflight($root, 0)
+        });
+        return 1 unless $aok;
+        printf "  Entries: %d   Different ownership: %d\n", $audit->{total}, $audit->{different};
+        print "  The new tree will use the confirmed account; the original is retained unchanged.\n";
+        print "  Standard new code modes: 2775 / 0664 / 0775.\n";
+        print "  Existing data permissions will not be widened; ACLs and private modes retained.\n";
+        return 0 unless ui_yes('Normalize ownership and permissions in the new installation?', 0);
+        if ($audit->{not_preservable}) {
+            print "  An exact additional backup cannot preserve mixed ownership as SYSOP.\n";
+            print "  The full original tree will still be retained for rollback.\n";
+            return 0 unless ui_yes('Continue without an additional backup?', 0);
+            $backup = 0;
+        } else {
+            $backup = ui_yes('Create an additional backup? (Recommended)', 1);
+        }
+    } else {
+        $backup = ui_yes('Create an additional backup? (Recommended)', 1);
+    }
     return unless defined $backup;
     my ($t) = ui_step('Checking installation', sub{
         tools_check();
         no_mounts($root);
-        owner_tree_preflight($root);
+        if ($normalize_update) { normalization_preflight($root, $backup); }
+        else { owner_tree_preflight($root); }
         for my $d(@persistent) {
             fail("missing/unsafe $d") unless -d "$root/$d" && ! -l "$root/$d"
         }
@@ -6062,7 +6504,16 @@ sub install_assign_tree {
         my ($path, $st) = @_;
         fail('ownership assignment failed') unless $st->[4] == $uid && $st->[5] == $gid;
         return if S_ISLNK($st->[2]);
-        my $mode = S_ISDIR($st->[2])?02775:0664|(($st->[2]&0111)?0111:0);
+        my $rel = substr($path, length($tree));
+        return if $rel =~ m{^/\.git(?:/|$)};
+        my $fresh = $rel !~ m{^/(?:local|local_data|local_cmd|filter|connect|scripts)(?:/|$)};
+        my $mode = candidate_mode($st->[2], $fresh);
+        return if $mode == ($st->[2]&07777);
+        my ($ok, $listing) = capture_status('ls', '-ldn', '--color=never', '--', $path);
+        fail("cannot inspect installation ACL: $path") unless $ok;
+        return if $listing =~ /\A.[rwxstST-]{9}\+/;
+        fail("unknown installation access method: $path")
+            unless $listing =~ /\A.[rwxstST-]{9}(?: |\. )/;
         chmod($mode, $path) or fail("mode $path: $!");
     }, (stat($tree))[0]);
     sync_tree($tree);
@@ -6788,10 +7239,31 @@ sub interactive {
         my $result = 0;
         my $ok = eval {
             $fixture = 0;
-            $root = validate_root($selected, $action eq 'restore');
+            $root = $selected;
             $work = undef;
             $j = undef;
+            $normalize_update = 0;
             ui_open_log($action);
+            if ($action eq 'update') {
+                my ($iok, $info) = ui_step('Detecting installation identity',
+                    sub { installation_identity($root) });
+                fail('installation identity detection failed') unless $iok;
+                print {$ui_log} 'IDENTITY ', $json->encode($info), "\n";
+                my $confirmed = ui_confirm_identity($info);
+                fail('installation identity is ambiguous or incompatible') if @{$info->{errors}};
+                if (!$confirmed) {
+                    print {$ui_log} "RESULT cancelled during identity confirmation\n";
+                    print "  Cancelled. No installation changes made.\n  Operation log: $ui_logpath\n";
+                    return 0;
+                }
+                my $now = identity_stat("$selected/perl/cluster.pl", 0);
+                fail('cluster.pl identity changed during selection') unless $now
+                    && $json->encode($now) eq $json->encode($info->{columns}[2]);
+                $root = validate_root($selected, 0, $info->{target});
+                $normalize_update = 1;
+            } else {
+                $root = validate_root($selected, 1);
+            }
             if ($action eq 'restore') {
                 $result = ui_restore();
             }  else {
@@ -6827,7 +7299,7 @@ sub interactive {
 
 sub usage {
     print <<'HELP';
-DXSpider Manager 1.3 — interactive install, update and restore
+DXSpider Manager 1.5 — interactive install, update and restore
   perl dxspider-manager.pl            Production menu; root and terminal required
   perl dxspider-manager.pl --preview  Preparation only (no service actions)
   perl dxspider-manager.pl --live     Explicit production mode (compatibility)
