@@ -14,17 +14,19 @@
 # Run as root; DXSpider itself runs under its configured account.
 #
 # Usage (from a directory outside the DXSpider installation):
-#   perl dxspider-manager.pl          # Interactive production operations as root
-#   perl dxspider-manager.pl --preview # Preview / preparation only
-#   perl dxspider-manager.pl --live   # Explicit production mode (compatibility)
-#   perl dxspider-manager.pl --help   # Command-line help
+#   perl dxspider-manager.pl            # Interactive production operations as root
+#   perl dxspider-manager.pl --preview  # Preview / preparation only
+#   perl dxspider-manager.pl --live     # Explicit production mode (compatibility)
+#   perl dxspider-manager.pl --help     # Command-line help
 #
 # Live operations require an interactive terminal and explicit confirmation.
 # Operation logs: /var/log/dxs-manager/
+# Optional: --startup-timeout=N (seconds per readiness phase; default 120).
 #
-# DXSpider (C) Dirk Koopman G1TLH
-# Kin EA3CV v1.1 20261125
+# DXSpider (C) Dirk Koopman G1TLH.
+# DXSpider Manager: Kin EA3CV - version 1.2 - 2026-11-26.
 #
+
 
 use 5.016001;
 use strict;
@@ -42,10 +44,10 @@ use Socket qw(AF_INET AF_INET6 inet_ntop);
 use Digest::SHA qw(sha256_hex);
 use JSON::PP;
 use POSIX qw(WNOHANG setsid);
-use Time::HiRes qw(sleep);
+use Time::HiRes qw(sleep clock_gettime CLOCK_MONOTONIC alarm);
 use Errno qw(ENOENT);
 
-use constant VERSION => '1.1';
+use constant VERSION => '1.2';
 
 my $live_requested = 0;
 my $preview_requested = 0;
@@ -59,6 +61,8 @@ my %units = (admin => 'dxweb-admin.service', web => 'dxweb.service', spider => '
 my @remote = ('git://scm.dxcluster.org/spider', 'https://github.com/EA3CV/dxspider.git');
 our $base = "";
 my $check_remote = 0;
+my $startup_timeout = 120;
+our $readiness_deadline;
 my ($manual_launch_dir, $spider_port, $web_port, $admin_port) = ('', 0, 0, 0);
 my ($mode, $installation, $branch, $backup, $allow_dirty, $fault, $role, $token, $reserve, $help,
     $probe_config) = ('interactive', '/spider', 'mojo', 0, 0, '', '', '', 0, 0, '');
@@ -84,6 +88,7 @@ GetOptions(
     'spider-port=i'         => \$spider_port,
     'web-port=i'            => \$web_port,
     'admin-port=i'          => \$admin_port,
+    'startup-timeout=i'     => \$startup_timeout,
     'help'                  => \$help
 ) or die "Invalid arguments\n";
 die "Unexpected arguments\n" if @ARGV;
@@ -272,6 +277,72 @@ sub tools_check {
 # lock/journal. The remaining path must belong to a single non-root account.
 # We do NOT chown/chmod the user's HOME or trust a journal located inside it.
 
+# Only accept group-write on a non-root ancestor if its group is private to
+# that account. Refuse directory ACLs and external/non-enumerable NSS sources.
+# Root-owned ancestors remain subject to the original strict policy.
+sub private_sysop_group {
+    my ($path, $uid, $gid) = @_;
+    return 0 unless $uid > 0 && $gid > 0;
+    my @pw = getpwuid($uid);
+    my @gr = getgrgid($gid);
+    return 0 unless @pw && @gr;
+    # A group is private by effective membership, not by its name or whether
+    # it is the account's primary or supplementary group (e.g. sysop:spider).
+    my $nss = optional_read('/etc/nsswitch.conf');
+    for my $db (qw(passwd group)) {
+        my @rules = $nss =~ /^[ \t]*\Q$db\E[ \t]*:[ \t]*([^#\n]+)/mg;
+        return 0 unless @rules == 1 && $rules[0] =~ /\Afiles(?:\s+systemd)?\s*\z/;
+    }
+    my @init = $nss =~ /^[ \t]*initgroups[ \t]*:[ \t]*([^#\n]+)/mg;
+    return 0 if @init && (@init != 1 || $init[0] !~ /\Afiles(?:\s+systemd)?\s*\z/);
+    my ($iok, $effective_groups) = capture_status('timeout', '10', 'id', '-G', '--', $pw[0]);
+    return 0 unless $iok && $effective_groups =~ /\A\d+(?:[ \t]+\d+)*\s*\z/
+        && grep {$_ == $gid} split /\s+/, $effective_groups;
+    my ($pok, $passwd) = capture_status('timeout', '10', 'getent', 'passwd');
+    my ($gok, $groups) = capture_status('timeout', '10', 'getent', 'group');
+    return 0 unless $pok && $gok;
+    my ($found_user, $found_group) = (0, 0);
+    for my $line (split /\n/, $passwd) {
+        my @f = split /:/, $line, -1;
+        return 0 unless @f == 7 && $f[2] =~ /\A\d+\z/ && $f[3] =~ /\A\d+\z/;
+        $found_user++ if $f[0] eq $pw[0] && $f[2] == $uid;
+        return 0 if $f[3] == $gid && $f[2] != $uid && $f[2] != 0;
+    }
+    for my $line (split /\n/, $groups) {
+        my @f = split /:/, $line, -1;
+        return 0 unless @f == 4 && $f[2] =~ /\A\d+\z/;
+        next unless $f[2] == $gid;
+        return 0 unless $f[0] eq $gr[0];
+        $found_group++;
+        for my $member (grep {length} split /,/, $f[3]) {
+            my @m = getpwnam($member);
+            return 0 unless @m && ($m[2] == $uid || $m[2] == 0);
+        }
+    }
+    return 0 unless $found_user == 1 && $found_group == 1;
+    # GNU ls marks extended ACLs (including default ACLs) with '+', and an
+    # unknown access method with '?'. Accept only the ordinary mode display.
+    # No getfacl dependency is needed on minimal Debian installations.
+    my ($lok, $listing) = capture_status('ls', '-ldn', '--color=never', '--', $path);
+    return 0 unless $lok && $listing =~ /\Ad[rwxstST-]{9} /;
+    # Also reject a running foreign process that retained the group after a
+    # membership change. The root and SYSOP identities are already trusted.
+    for my $pid (all_pids()) {
+        my $status = optional_read("/proc/$pid/status");
+        unless (length $status) {
+            return 0 if -d "/proc/$pid"; # existing but unreadable: fail closed
+            next; # process disappeared
+        }
+        my ($uids) = $status =~ /^Uid:\s+([^\n]+)/m;
+        my ($gids) = $status =~ /^Gid:\s+([^\n]+)/m;
+        my ($supp) = $status =~ /^Groups:[ \t]*([^\n]*)/m;
+        return 0 unless defined($uids) && defined($gids) && defined($supp);
+        next unless grep {$_ == $gid} split /\s+/, "$gids $supp";
+        return 0 if grep {$_ != 0 && $_ != $uid} split /\s+/, $uids;
+    }
+    return 1;
+}
+
 sub transaction_layout {
     my ($r, $uid) = @_;
     path_check($r);
@@ -288,7 +359,12 @@ sub transaction_layout {
     my $dev = (stat($parent))[0];
     for my $d (@chain) {
         my @st = lstat($d);
-        fail("unsafe transaction ancestor $d") unless @st && S_ISDIR($st[2]) && !($st[2]&0022);
+        fail("unsafe transaction ancestor $d")
+            unless @st && S_ISDIR($st[2]) && !($st[2]&0002);
+        if ($st[2]&0020) {
+            fail("unsafe transaction ancestor $d (group write is not private to SYSOP)")
+                unless $st[4] != 0 && private_sysop_group($d, $st[4], $st[5]);
+        }
         if (!defined($account) && $st[4] == 0) {
             $anchor = $d;
             next;
@@ -414,11 +490,34 @@ sub owner_tree_preflight {
     return owner_file_call(sub {owner_tree_preflight($tree)}) if $home_fs;
     my %groups = map {$_ => 1} split /\s+/, $);
     my $dev = (stat($tree))[0];
+    my (%counts, @bad);
+    my $total = 0;
     walk($tree, sub {
         my ($path, $st) = @_;
-        fail("file ownership cannot be preserved as SYSOP: $path") unless $st->[4] == $owner
-            && $groups{$st->[5]};
+        ++$total;
+        ++$counts{"$st->[4]:$st->[5]"};
+        return if $st->[4] == $owner && $groups{$st->[5]};
+        push @bad, {path => $path, uid => $st->[4], gid => $st->[5],
+            mode => sprintf('%04o', $st->[2]&07777), links => $st->[3],
+            kind => S_ISREG($st->[2])?'file':S_ISDIR($st->[2])?'directory':'symlink'};
     }, $dev);
+    print "OWNERSHIP AUDIT entries=$total incompatible=", scalar(@bad), "\n";
+    for my $key (sort keys %counts) {
+        my ($uid, $gid) = split /:/, $key;
+        my $user = getpwuid($uid)//$uid;
+        my $group_name = getgrgid($gid)//$gid;
+        print "  $user:$group_name ($key): $counts{$key}\n";
+    }
+    if (@bad) {
+        ui_event("[WARNING] ".scalar(@bad)." incompatible ownership entries; full list in log.");
+        for my $entry (@bad) {
+            print '  INCOMPATIBLE ', $json->encode($entry), "\n";
+        }
+        print "Review affected files and correct only confirmed accidental ownership offline.\n";
+        fail('file ownership cannot be preserved as SYSOP: '.scalar(@bad).
+            ' incompatible entries; review full ownership audit in the operation log. '.
+            'No ownership changed.');
+    }
     return 1;
 }
 
@@ -1461,7 +1560,7 @@ sub require_no_unknown_writers {
 sub unit_info {
     my ($r, $name) = @_;
     my $u = $name//$units{$r};
-    my ($ok, $out) = capture_status('timeout', '10', 'systemctl', 'show', $u, '--no-pager',
+    my ($ok, $out) = capture_status('timeout', readiness_command_timeout(10), 'systemctl', 'show', $u, '--no-pager',
         '--property=Id,LoadState,ActiveState,SubState,MainPID,ControlGroup,FragmentPath,ExecStart,WorkingDirectory,User,Group,NeedDaemonReload,KillMode,InvocationID,Type,Result,ActiveEnterTimestampMonotonic');
     my %h = map {split /=/, $_, 2} grep {/=/} split /\n/, $out;
     # A missing unit may produce a nonzero status on some systemd releases.
@@ -1508,7 +1607,7 @@ sub unit_info {
     ) ? 1 : 0;
     $h{pid_start} = $p->{start} if $p;
     if (($h{LoadState}//'') eq 'loaded') {
-        my ($c, $raw) = capture_status('timeout', '10', 'systemctl', 'cat', $u, '--no-pager');
+        my ($c, $raw) = capture_status('timeout', readiness_command_timeout(10), 'systemctl', 'cat', $u, '--no-pager');
         $h{unit_sha} = sha256_hex($raw) if $c && length $raw;
     }
     return \%h;
@@ -2120,9 +2219,15 @@ sub probe_service {
         local $SIG{ALRM} = sub{
             die "probe timeout\n"
         };
-        alarm 5;
+        my $budget = 5;
+        if (defined $readiness_deadline) {
+            my $remaining = $readiness_deadline-monotonic_now();
+            die "probe deadline expired\n" unless $remaining > 0;
+            $budget = $remaining if $remaining < $budget;
+        }
+        alarm $budget;
         my $sock = IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $p->{port},
-            Proto => 'tcp', Timeout => 3) or die "connect failed\n";
+            Proto => 'tcp', Timeout => ($budget < 3 ? $budget : 3)) or die "connect failed\n";
         if ($p->{type} eq 'http' || $p->{type} eq 'title') {
             print {$sock} "GET $p->{path} HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" or die "probe write failed\n"
         }
@@ -2587,16 +2692,11 @@ sub manual_start {
             delete $s->{launch_pending};
             checkpoint($j->{state});
             inject('crash-manual-after-release');
-            my $deadline = time+60;
-            while (time<$deadline) {
-                fail('manual process exited before readiness') unless manual_process($s);
-                return if eval{
-                    manual_probe($s);
-                    1
-                };
-                sleep .25
-            }
-            fail('manual service readiness timeout')
+            wait_for_readiness('manual service', sub {
+                my $current = manual_process($s) or fail('manual process exited before readiness');
+                return manual_probe_identity($current);
+            }, sub { manual_probe($s) }, 0);
+            return;
         }
         sleep .1
     }
@@ -2663,8 +2763,10 @@ sub adapter_stop {
 sub adapter_start {
     my ($r) = @_;
     if (($j && ($j->{services}{$r}{kind}//'') eq 'manual')) {
-        manual_start($j->{services}{$r});
-        return
+        my $service = $j->{services}{$r};
+        manual_start($service);
+        my $p = manual_process($service) or fail('manual process disappeared after startup');
+        return manual_probe_identity($p);
     }
     if ($fixture && !$systemd_fixture) {
         worker_start($r);
@@ -2672,11 +2774,16 @@ sub adapter_start {
     }
     fail('live disabled') unless LIVE_ENABLED || $systemd_fixture;
     systemd_fixture_guard($r) if $systemd_fixture;
-    return if adapter_state($r);
-    run('timeout', '90', 'systemctl', 'start', transaction_unit_name($r));
-    for (1..40) {
+    if (adapter_state($r)) {
         my $v = checked_unit($r);
-        return if $v->{confirmed} && $v->{ActiveState} eq 'active';
+        fail("unit changed before startup verification $r") unless $v->{confirmed};
+        return unit_identity($v);
+    }
+    run('timeout', $startup_timeout, 'systemctl', 'start', transaction_unit_name($r));
+    my $end = monotonic_now()+$startup_timeout;
+    while (monotonic_now() < $end) {
+        my $v = checked_unit($r);
+        return unit_identity($v) if $v->{confirmed} && $v->{ActiveState} eq 'active';
         last if ($v->{ActiveState}//'') eq 'failed';
         sleep .25
     }
@@ -2827,40 +2934,96 @@ sub prepare {
     print "STAGED $j->{head} $j->{remote}\nWORKSPACE $work\n";
 }
 
+sub monotonic_now {
+    return clock_gettime(CLOCK_MONOTONIC);
+}
+
+sub readiness_command_timeout {
+    my ($limit) = @_;
+    return $limit unless defined $readiness_deadline;
+    my $remaining = $readiness_deadline-monotonic_now();
+    return .001 if $remaining <= 0;
+    return $remaining < $limit ? $remaining : $limit;
+}
+
+sub readiness_retryable {
+    my ($error) = @_;
+    return $error =~ /\AERROR: (?:no loopback listener for [a-z]+ port \d+|functional probe failed for [a-z]+)\n\z/;
+}
+
+# Identity and unit checks are not retryable. Missing sockets and a functional
+# response that has not arrived yet are normal during database initialization.
+# Count stability only after a successful probe. Never accept after deadline.
+sub wait_for_readiness {
+    my ($label, $inspect, $probe, $stable) = @_;
+    my $end = monotonic_now() + $startup_timeout;
+    local $readiness_deadline = $end;
+    my ($identity, $ready_since, $last_error);
+    my $next_report = monotonic_now();
+    while (monotonic_now() < $end) {
+        my $current = $inspect->();
+        fail("$label identity changed during readiness")
+            if defined($identity) && $identity ne $current;
+        $identity = $current;
+        last if monotonic_now() >= $end;
+        my $ok = eval { $probe->(); 1 };
+        my $err = $@;
+        if (!$ok) {
+            die $err unless readiness_retryable($err);
+            $last_error = $err;
+            undef $ready_since;
+        } else {
+            my $after = $inspect->();
+            fail("$label identity changed during probe") unless $after eq $identity;
+            my $now = monotonic_now();
+            $ready_since = $now unless defined $ready_since;
+            return $identity if $now < $end && $now-$ready_since >= $stable;
+        }
+        if (monotonic_now() >= $next_report) {
+            ui_event("Waiting for $label readiness (up to $startup_timeout seconds)");
+            $next_report = monotonic_now()+10;
+        }
+        my $remaining = $end-monotonic_now();
+        sleep($remaining < 1 ? $remaining : 1) if $remaining > 0;
+    }
+    fail("$label readiness timeout after $startup_timeout seconds".
+        (defined($last_error) ? ": $last_error" : ''));
+}
+
 sub verify_started {
-    my ($policy) = @_;
+    my ($policy, $started) = @_;
+    $started //= {};
     if (!$fixture || $systemd_fixture) {
-        my %seen;
-        for (1..5) {
+        my $inspect = sub {
+            my %ids;
             for my $r (@start) {
                 my $s = $j->{services}{$r};
                 next unless $s->{exists};
                 my $active = adapter_state($r);
                 fail("unexpected service state $r") unless $active == $s->{$policy};
                 next unless $active;
-                my $identity = $s->{kind}
-                    && $s->{kind} eq 'manual'?manual_probe_identity(manual_process($s)):unit_identity(checked_unit($r));
-                fail("service restarted during verification $r") if defined($seen{$r})
-                    && $seen{$r} ne $identity;
-                $seen{$r} = $identity
+                $ids{$r} = ($s->{kind}//'') eq 'manual'
+                    ? manual_probe_identity(manual_process($s))
+                    : unit_identity(checked_unit($r));
+                fail("service restarted since startup $r") if defined($started->{$r})
+                    && $started->{$r} ne $ids{$r};
             }
-            sleep 1
-        }
-        for my $r (@start) {
-            next unless $j->{services}{$r}{$policy};
-            my $s = $j->{services}{$r};
-            if (($s->{kind}//'') eq 'manual') {
-                fail('manual process changed before probe')
-                    unless manual_probe_identity(manual_process($s)) eq $seen{$r};
-                manual_probe($s);
-                next
+            return $json->encode(\%ids);
+        };
+        my $probe = sub {
+            for my $r (@start) {
+                my $s = $j->{services}{$r};
+                next unless $s->{$policy};
+                if (($s->{kind}//'') eq 'manual') {
+                    manual_probe($s);
+                } else {
+                    probe_unit($r, $s->{probe}, checked_unit($r));
+                }
             }
-            my $v = checked_unit($r);
-            fail("service restarted before probe $r") unless unit_identity($v) eq $seen{$r};
-            probe_unit($r, $j->{services}{$r}{probe}, $v);
-            fail("service failed after probe $r") unless adapter_state($r)
-                && unit_identity(checked_unit($r)) eq $seen{$r}
-        }
+        };
+        # Four seconds of stable functional readiness, not four seconds
+        # measured from systemctl start.
+        wait_for_readiness('services', $inspect, $probe, 4);
         return;
     }
     # Real-runtime evidence uses actual cluster.pl, not synthetic .writer files.
@@ -2906,14 +3069,16 @@ sub verify_started {
 
 sub restore_policy {
     my ($policy) = @_;
+    my %started;
     for my $r (@start) {
         next unless $j->{services}{$r}{exists};
         if ($j->{services}{$r}{$policy}) {
-            adapter_start($r)
+            $started{$r} = adapter_start($r);
         }  elsif (adapter_state($r)) {
             adapter_stop($r)
         }
-    } verify_started($policy);
+    }
+    verify_started($policy, \%started);
 }
 
 sub activate {
@@ -3046,19 +3211,21 @@ sub activate {
     fail('active manifest mismatch') unless manifest($root, '.') eq $j->{new_sha};
     fail('active persistence mismatch') unless manifest($root, @persistent) eq $j->{persist_sha};
     checkpoint('STARTING');
+    my %started;
     for my $r (@start) {
         next unless $j->{services}{$r}{desired};
         $j->{intent} = "start:$r";
         checkpoint('STARTING');
         inject("start-$r");
         ui_event("Starting $r");
-        adapter_start($r);
-        ui_event("[ OK ] $r started")
+        $started{$r} = adapter_start($r);
+        ui_event("[ OK ] $r process started; final readiness pending")
     }
     inject('crash-started');
     inject('verify');
     ui_event('Verifying functional service endpoints and revision');
-    verify_started('desired');
+    verify_started('desired', \%started);
+    ui_event('[ OK ] Functional readiness verified');
     fail('active Git revision changed during service startup') unless git_value($root, 'rev-parse',
         'HEAD') eq $j->{head} && git_value($root, 'symbolic-ref', '--short',
         'HEAD') eq $j->{branch};
@@ -3422,11 +3589,67 @@ sub inspect_tx {
     }
 }
 
+# Acknowledgement is distinct from recovery: the original is already live.
+# The failed tree must still be the recorded candidate, stopped and unchanged.
+sub reconciliation_digest {
+    my $r = $j->{reconciliation};
+    fail('no rolled-back transaction awaiting review') unless $j->{state} eq 'ROLLED_BACK'
+        && ref($r) eq 'HASH' && ($r->{status}//'') =~ /\A(?:REVIEW_REQUIRED|REVIEW_ACKNOWLEDGED)\z/;
+    my $tw = tree_work();
+    fail('restored installation identity changed') unless same(ident($root), $j->{old_id});
+    fail('failed tree identity changed') unless same(ident("$tw/failed"), $j->{new_id});
+    require_no_unknown_writers({}, "$tw/failed");
+    my $digest = manifest("$tw/failed", @persistent);
+    fail('failed tree persistence changed since rollback; manual investigation required')
+        unless same($digest, $r->{failed_persist_sha});
+    return $digest;
+}
+
+sub reconciliation_report {
+    my $digest = reconciliation_digest();
+    my $tw = tree_work();
+    # Comparison with the current live tree is informational, not a comparison
+    # with an immutable pre-update baseline. Current data may change in flight.
+    my $report = owner_file_call(sub {
+        my @result;
+        for my $d (@persistent) {
+            my ($ok, $out) = capture_status('rsync', '-aHAXn', '--delete', '--checksum',
+                '--itemize-changes', '--out-format=%i %n%L', '--', "$tw/failed/$d/", "$root/$d/");
+            my @lines = grep {length} split /\n/, $out;
+            print 'RECONCILIATION COMPARISON ', $d, ' complete=', $ok?1:0, "\n";
+            print $json->encode($_), "\n" for @lines;
+            my @sample = @lines > 5 ? @lines[0..4] : @lines;
+            push @result, {dir => $d, count => scalar(@lines), complete => $ok?1:0,
+                sample => \@sample};
+        }
+        return \@result;
+    });
+    fail('failed tree changed during review') unless same(reconciliation_digest(), $digest);
+    return {digest => $digest, directories => $report};
+}
+
+sub reconciliation_acknowledge {
+    my ($digest) = @_;
+    fail('production reconciliation acknowledgement requires live confirmation')
+        unless LIVE_ENABLED || $fixture;
+    fail('reconciliation is not pending') unless $j->{reconciliation}{status} eq 'REVIEW_REQUIRED';
+    fail('reviewed failed tree changed') unless same(reconciliation_digest(), $digest);
+    $j->{reconciliation}{status} = 'REVIEW_ACKNOWLEDGED';
+    $j->{reconciliation}{reviewed_at} = time;
+    $j->{reconciliation}{reviewed_sha} = $digest;
+    $j->{reconciliation}{review_policy} = 'operator acknowledged; retain both trees; no merge';
+    checkpoint('ROLLED_BACK');
+}
+
 sub archive_tx {
     load_journal();
     my $state = $j->{state};
     fail('production reconciliation review required before another transaction') if !$fixture
         && $j->{reconciliation} && $j->{reconciliation}{status} eq 'REVIEW_REQUIRED';
+    if (($j->{reconciliation}{status}//'') eq 'REVIEW_ACKNOWLEDGED') {
+        fail('acknowledged failed tree changed') unless same(reconciliation_digest(),
+            $j->{reconciliation}{reviewed_sha});
+    }
     fail('unresolved transaction must not be archived')
         unless $state =~  /\A(?:PLANNED|STAGED|COMMITTED|ROLLED_BACK)\z/;
     my $expected = $state eq 'COMMITTED'?$j->{new_id}:$j->{old_id};
@@ -4030,7 +4253,7 @@ sub ui_section {
     print {$ui_log} "\n=== SCREEN: $label ===\n" if $ui_log;
     if ($clear && ui_screen_enabled()) {
         print "\e[2J\e[H", ("=" x 62), "\n DXSpider Manager ", VERSION, "\n", ("=" x 62), "\n";
-        print LIVE_ENABLED ? " LIVE\n" : " PREVIEW - production actions disabled\n";
+        print LIVE_ENABLED ? " LIVE - explicit confirmation required\n" : " PREVIEW - production actions disabled\n";
         my ($os) = optional_read('/etc/os-release') =~ /^PRETTY_NAME="?([^"\n]+)"?$/m;
         print " OS: ", ui_safe($os//'unknown'), " | Perl: $^V\n";
     }
@@ -4619,7 +4842,7 @@ sub ui_service_table {
 
 sub ui_probe_preview {
     my ($s) = @_;
-    my %defaults = (spider => 9300, web => 7380, admin => 7381);
+    my %defaults = (spider => 7300, web => 7380, admin => 7381);
     my %probes;
     for my $r(@start) {
         my $o = $s->{roles}{$r};
@@ -4650,41 +4873,74 @@ sub ui_probe_preview {
             print "  $ui_label{$r}: no observed local listener; activation would be blocked.\n";
             next
         }
-        my $def = (grep {$_ == $defaults{$r}} @ports)?$defaults{$r}:@ports == 1?$ports[0]:undef;
-        my $port = $def;
-        while (!defined($port)) {
-            my $a = ui_ask("$ui_label{$r} functional probe TCP port (0 to skip)",
-                defined($def)?$def:'0');
-            last unless defined($a) && $a ne '0';
-            if ($a =~ /\A[1-9]\d{0,4}\z/ && grep {$_ == $a} @ports) {
-                $port = 0+$a;
-                last
-            }
-            print 'Choose an observed port: ', join(', ', @ports), " or 0.\n";
-        }
-        unless ($port) {
-            print "  $ui_label{$r}: probe skipped; activation would be blocked.\n";
-            next
-        }
-        my $p = $r eq 'spider'?{type => 'prompt', port => $port,
-            expect => 'login: '}:{type => 'title',
-            port => $port, path => '/', status => 200,
-            expect => $r eq 'web'?'DXSpider Web':'DXSpider Web Supervision'};
-        my $saved = $manual_launch_dir;
-        my ($ok) = ui_step("Verifying $ui_label{$r} functional endpoint (read only)", sub{
-            if ($o->{manual}) {
-                $manual_launch_dir = "$root/perl";
-                manual_contract($o->{process}, $p)
+        my %valid;
+        for my $port (@ports) {
+            my $p = $r eq 'spider'
+                ? {type => 'prompt', port => $port, expect => 'login: '}
+                : {type => 'title', port => $port, path => '/', status => 200,
+                    expect => $r eq 'web'?'DXSpider Web':'DXSpider Web Supervision'};
+            my $saved = $manual_launch_dir;
+            my ($ok, $result) = ui_step("Testing $ui_label{$r} endpoint $port", sub {
+                my $verified = eval {
+                    if ($o->{manual}) {
+                        $manual_launch_dir = "$root/perl";
+                        manual_contract($o->{process}, $p);
+                    } else {
+                        probe_unit($r, $p, $o->{unit_info});
+                    }
+                    1;
+                };
+                my $err = $@;
+                if (!$verified) {
+                    die $err unless readiness_retryable($err);
+                    print "Endpoint $port not ready or not a matching service: $err";
+                }
+                return $verified ? 1 : 0;
+            });
+            $manual_launch_dir = $saved;
+            # An identity or ownership error is not an ordinary invalid port.
+            return undef unless $ok;
+            if ($result) {
+                $valid{$port} = $p;
+                print "  $ui_label{$r} port $port: verified\n";
             } else {
-                probe_unit($r, $p, $o->{unit_info})
+                print "  $ui_label{$r} port $port: no matching response\n";
             }
-            return 1
-        });
-        $manual_launch_dir = $saved;
-        $probes{$r} = $p if $ok;
+        }
+        my @valid = sort {$a <=> $b} keys %valid;
+        unless (@valid) {
+            print "  $ui_label{$r}: no verified functional endpoint.\n";
+            next;
+        }
+        my $port = @valid == 1 ? $valid[0] : undef;
+        my $def = exists($valid{$defaults{$r}}) ? $defaults{$r} : $valid[0];
+        while (!defined $port) {
+            my $a = ui_ask("$ui_label{$r} verified functional probe port (Q to cancel)", $def);
+            return undef unless defined($a) && $a !~ /\Aq\z/i;
+            if ($a =~ /\A[1-9]\d{0,4}\z/ && exists $valid{$a}) {
+                $port = 0+$a;
+            } else {
+                print 'Choose a verified port: ', join(', ', @valid), ".\n";
+            }
+        }
+        $probes{$r} = $valid{$port};
     }
     print {$ui_log} "Functional observations: ", $json->encode(\%probes), "\n" if $ui_log;
     return \%probes;
+}
+
+sub ui_probes_complete {
+    my ($services, $probes) = @_;
+    return 0 unless ref($probes) eq 'HASH' && !@{$services->{block}};
+    for my $r (@start) {
+        my $o = $services->{roles}{$r};
+        next if $o->{after} =~ /\A(?:Remain stopped|SKIPPED)/;
+        unless ($probes->{$r}) {
+            ui_result("[FAIL] Functional probe required for $ui_label{$r} before preparation.");
+            return 0;
+        }
+    }
+    return 1;
 }
 
 sub ui_gib {
@@ -4966,8 +5222,53 @@ sub restore_prepare {
     print "RESTORE STAGED $j->{head}; original restore point retained\n";
 }
 
+sub ui_reconciliation {
+    my ($previous) = @_;
+    ui_section('ROLLED BACK TRANSACTION - DATA REVIEW');
+    print "  The previous installation has been restored.\n";
+    print "  The failed candidate contains persistent changes.\n";
+    print "  No data will be merged or deleted.\n";
+    return 0 unless LIVE_ENABLED;
+    my ($ok, $report) = ui_step('Checking retained failed tree and differences', sub {
+        acquire(0);
+        load_journal();
+        fail('transaction changed since selection') unless $j->{state} eq 'ROLLED_BACK'
+            && ($j->{sequence}//0) == ($previous->{sequence}//0)
+            && same($j->{old_id}, $previous->{old_id}) && same($j->{new_id}, $previous->{new_id});
+        return reconciliation_report();
+    });
+    my $archived;
+    if ($ok) {
+        print "\n  Differences compared with the CURRENT installation (not the historical baseline):\n";
+        for my $d (@{$report->{directories}}) {
+            printf "  %-15s %s\n", $d->{dir}, $d->{complete}?"$d->{count} differences":'comparison incomplete';
+            print '    ', ui_safe($_), "\n" for @{$d->{sample}};
+            print "    ... see full log\n" if $d->{count} > @{$d->{sample}};
+        }
+        print "  Detailed comparison: $ui_logpath\n";
+        print "  Failed tree: ", ui_safe(tree_work().'/failed'), "\n";
+        print "  Original persistence digest: ", ui_safe($j->{reconciliation}{baseline_sha}), "\n";
+        print "  Failed persistence digest: ", ui_safe($report->{digest}), "\n";
+        if (ui_yes('Acknowledge review and archive failed transaction without merging?', 0)) {
+            ($ok, $archived) = ui_step('Recording review and archiving transaction', sub {
+                reconciliation_acknowledge($report->{digest});
+                return archive_tx();
+            });
+            print "  Retained transaction: ", ui_safe($archived), "\n" if $ok;
+        }
+    }
+    close $lock if $lock;
+    undef $lock;
+    return $archived ? 1 : 0;
+}
+
 sub ui_restore {
     my ($w, $previous) = ui_journal();
+    if ($previous && ($previous->{reconciliation}{status}//'') eq 'REVIEW_REQUIRED'
+        && $previous->{state} eq 'ROLLED_BACK') {
+        return 1 unless ui_reconciliation($previous);
+        ($w, $previous) = ui_journal();
+    }
     if ($previous && ($previous->{state}//'') !~ /\A(?:PLANNED|STAGED|COMMITTED|ROLLED_BACK)\z/) {
         ui_section('INTERRUPTED UPDATE OR RESTORE');
         print '  Transaction: ', ui_safe($previous->{state}), "\n  Workspace: ", ui_safe($w), "\n";
@@ -5044,6 +5345,16 @@ sub ui_restore {
         print "\n  Production restoration is not enabled. Only preparation is available.\n";
         return 0 unless ui_yes('Prepare and verify the restore candidate?', 0);
     }
+    my ($services, $probes);
+    if (LIVE_ENABLED) {
+        ui_section('RESTORE SERVICE PLAN');
+        my ($sok, $detected) = ui_step('Detecting services', sub {ui_services()});
+        return 1 unless $sok;
+        $services = $detected;
+        ui_service_table($services);
+        $probes = ui_probe_preview($services);
+        return 1 unless ui_probes_complete($services, $probes);
+    }
     my ($prepared) = ui_step('Preparing restore candidate', sub {
         acquire(1);
         restore_prepare($p);
@@ -5054,11 +5365,6 @@ sub ui_restore {
     return 1 unless $prepared;
     ui_result('[ OK ] Restore candidate verified. Active installation unchanged.');
     if (LIVE_ENABLED) {
-        ui_section('RESTORE SERVICE PLAN');
-        my ($sok, $services) = ui_step('Detecting services', sub {ui_services()});
-        return 1 unless $sok;
-        ui_service_table($services);
-        my $probes = ui_probe_preview($services);
         return ui_execute_staged($services, $probes, {%$j});
     }
     return 0;
@@ -5133,6 +5439,11 @@ sub ui_execute_staged {
 sub ui_update_plan {
     my ($v) = @_;
     my ($w, $existing) = ui_journal();
+    if ($existing && ($existing->{reconciliation}{status}//'') eq 'REVIEW_REQUIRED'
+        && $existing->{state} eq 'ROLLED_BACK') {
+        return 1 unless ui_reconciliation($existing);
+        ($w, $existing) = ui_journal();
+    }
     if ($existing && (($existing->{state}//'') !~ /\A(?:PLANNED|STAGED|COMMITTED|ROLLED_BACK)\z/ ||
         ($existing->{reconciliation}{status}//'') eq 'REVIEW_REQUIRED')) {
         ui_result('[WARNING] Previous transaction requires recovery or data review.');
@@ -5188,6 +5499,10 @@ sub ui_update_plan {
         }
         return 1
     });
+    unless ($t) {
+        print "  Installation check failed. Review the complete audit in the technical log.\n";
+        return 1;
+    }
     my ($cok, $c) = ui_step('Calculating disk space', sub{
         ui_capacity(1)
     });
@@ -5202,6 +5517,7 @@ sub ui_update_plan {
         print "\n";
         $probes = ui_probe_preview($s);
     }
+    return 1 if LIVE_ENABLED && (!$sok || !ui_probes_complete($s, $probes));
     ui_section('4. UPDATE PREPARATION PLAN');
     print '  Installation: ', ui_safe($root), "\n  Current: ", ui_safe($v->{branch}), ' / ',
         ui_safe($v->{describe}), "\n  Target: $branch / ", substr(($a//$b), 0, 12), "\n\n";
@@ -6050,29 +6366,24 @@ sub install_start_systemd {
     $plan->{unit_sha} = $v->{unit_sha};
     install_checkpoint($plan, 'SERVICE_STARTING');
     ui_event('Starting DXSpider service');
-    run('timeout', '90', 'systemctl', 'start', install_service_name());
-    my $end = time+90;
-    my $identity;
-    while (time<$end) {
+    run('timeout', $startup_timeout, 'systemctl', 'start', install_service_name());
+    my $process_deadline = monotonic_now()+$startup_timeout;
+    while (1) {
         $v = install_checked_service($plan);
-        fail('new service failed to start') if ($v->{ActiveState}//'') eq 'failed';
-        if ($v->{confirmed}) {
-            $identity = unit_identity($v);
-            my $ok = eval {probe_unit('spider', {type => 'prompt', port => $cfg->{port},
-                    expect => 'login: '}, $v); 1};
-            last if $ok;
-            undef $identity;
-        }
-        sleep .5;
+        last if $v->{confirmed} && ($v->{ActiveState}//'') eq 'active';
+        fail('new service failed to start') if ($v->{ActiveState}//'') =~ /\A(?:failed|inactive)\z/
+            || monotonic_now() >= $process_deadline;
+        sleep .25;
     }
-    fail('new service did not return verified login prompt') unless defined $identity;
-    for (1..3) {
-        sleep 1;
+    my $identity = wait_for_readiness('new DXSpider service', sub {
         $v = install_checked_service($plan);
-        fail('new service restarted during verification') unless $v->{confirmed}
-            && unit_identity($v) eq $identity;
-    }
-    probe_unit('spider', {type => 'prompt', port => $cfg->{port}, expect => 'login: '}, $v);
+        fail('new service failed to start') unless $v->{confirmed}
+            && ($v->{ActiveState}//'') eq 'active';
+        return unit_identity($v);
+    }, sub {
+        probe_unit('spider', {type => 'prompt', port => $cfg->{port},
+            expect => 'login: '}, $v);
+    }, 3);
     install_checkpoint($plan, 'SERVICE_ENABLING');
     run('timeout', '30', 'systemctl', 'enable', install_service_name());
     my $enabled = capture('timeout', '10', 'systemctl', 'is-enabled', install_service_name());
@@ -6484,10 +6795,11 @@ sub interactive {
 
 sub usage {
     print <<'HELP';
-DXSpider Manager 1.1 — interactive install, update and restore
+DXSpider Manager 1.2 — interactive install, update and restore
   perl dxspider-manager.pl            Production menu; root and terminal required
   perl dxspider-manager.pl --preview  Preparation only (no service actions)
   perl dxspider-manager.pl --live     Explicit production mode (compatibility)
+  --startup-timeout N  Readiness timeout in seconds (default 120; 5..3600)
   --mode interactive [--scan-root ABSOLUTE_DIR] [--installation PATH]
   --mode host-plan --installation /spider --branch mojo|test [--backup] [--reserve-gib N]
   --mode integration-check --installation /spider --branch mojo|test [--check-remote] [--probe-config FILE]
@@ -6516,6 +6828,8 @@ fail('observation options only for integration-check or explicit update') if ($m
     && $mode ne 'fixture-update';
 fail('invalid observation port') if grep {$_<0||$_>65535} ($spider_port, $web_port, $admin_port);
 fail('invalid branch') unless $branch eq 'mojo' || $branch eq 'test';
+fail('invalid startup timeout (5..3600 seconds)')
+    unless $startup_timeout >= 5 && $startup_timeout <= 3600;
 fail('invalid reserve') unless $reserve >= 0 && $reserve <= 1000;
 fail('fault injection only in fixture') if length($fault) && $mode !~ /^fixture-/;
 fail('--live and --preview are mutually exclusive') if $live_requested && $preview_requested;
