@@ -20,11 +20,11 @@
 #   perl dxspider-manager.pl --help     # Command-line help
 #
 # Live operations require an interactive terminal and explicit confirmation.
-# Operation logs: /var/log/dxs-manager/
+# State and logs: /var/lib/dxs-manager/ (existing protected /var/log/dxs-manager/ retained).
 # Optional: --startup-timeout=N (seconds per readiness phase; default 120).
 #
 # DXSpider (C) Dirk Koopman G1TLH.
-# DXSpider Manager: Kin EA3CV - version 1.2 - 2026-11-26.
+# DXSpider Manager: Kin EA3CV - version 1.3 - 2026-11-26.
 #
 
 
@@ -47,7 +47,7 @@ use POSIX qw(WNOHANG setsid);
 use Time::HiRes qw(sleep clock_gettime CLOCK_MONOTONIC alarm);
 use Errno qw(ENOENT);
 
-use constant VERSION => '1.2';
+use constant VERSION => '1.3';
 
 my $live_requested = 0;
 my $preview_requested = 0;
@@ -4461,17 +4461,49 @@ sub ui_choose_for {
 # its staging area. It is never placed in an account-writable HOME.
 sub manager_state_directory {
     my ($create) = @_;
-    my $p = '/var/log/dxs-manager';
+    return manager_state_path('/var/log/dxs-manager', '/var/lib/dxs-manager',
+        $create);
+}
+
+# New installations use a private state directory below /var/lib, not a
+# system log directory that may legitimately be writable by the syslog group.
+# Retain the old location when present: its lock and recovery pointer must
+# not be split across two namespaces or silently abandoned.
+sub manager_state_path {
+    my ($legacy, $current, $create) = @_;
     fail('root required for manager operations') unless $> == 0;
-    protected_ancestors(dirname($p));
-    if (!exists_path($p)) {
+
+    my @present;
+    for my $dir ($legacy, $current) {
+        my @st = lstat($dir);
+        if (@st) {
+            push @present, $dir;
+        } elsif ($! != ENOENT) {
+            fail("cannot inspect manager state location $dir: $!");
+        }
+    }
+    fail("two manager state directories exist ($legacy and $current); "
+        . 'review recovery state before proceeding; nothing moved')
+        if @present > 1;
+
+    my $p = @present ? $present[0] : $current;
+    my $trusted = eval { protected_ancestors(dirname($p)); 1 };
+    if (!$trusted) {
+        my $error = $@;
+        chomp $error;
+        fail("manager state location $p is not trusted ($error); "
+            . 'existing state must be reviewed; nothing moved') if @present;
+        fail("no protected manager state location $p ($error)");
+    }
+
+    if (!@present) {
         return undef unless $create;
         mkdir($p, 0700) or fail("mkdir $p: $!");
         sync_dir(dirname($p));
     }
     my @s = lstat($p);
-    fail('unsafe manager state directory') unless @s && S_ISDIR($s[2]) && $s[4] == 0
-        && !($s[2]&0077);
+    fail("unsafe manager state directory $p") unless @s && S_ISDIR($s[2])
+        && $s[4] == 0 && !($s[2]&0077);
     return $p;
 }
 
@@ -5710,7 +5742,7 @@ sub install_path_anchor {
     fail('reserved installation location') if $dest eq '/' || $dest eq '/home' || $dest eq '/root'
         || under($dest, '/tmp') || under($dest, '/var/tmp') || under($dest, '/proc')
         || under($dest, '/sys') || under($dest, '/dev') || under($dest, '/etc')
-        || under($dest, '/var/log');
+        || under($dest, '/var/log') || under($dest, '/var/lib/dxs-manager');
     fail('installation destination already exists; nothing will be overwritten')
         if exists_path($dest);
     my $parent = dirname($dest);
@@ -6795,7 +6827,7 @@ sub interactive {
 
 sub usage {
     print <<'HELP';
-DXSpider Manager 1.2 — interactive install, update and restore
+DXSpider Manager 1.3 — interactive install, update and restore
   perl dxspider-manager.pl            Production menu; root and terminal required
   perl dxspider-manager.pl --preview  Preparation only (no service actions)
   perl dxspider-manager.pl --live     Explicit production mode (compatibility)
