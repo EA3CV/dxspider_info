@@ -24,7 +24,7 @@
 # Optional: --startup-timeout=N (seconds per readiness phase; default 120).
 #
 # DXSpider (C) Dirk Koopman G1TLH.
-# DXSpider Manager: Kin EA3CV - version 1.5 - 2026-11-26.
+# DXSpider Manager: Kin EA3CV - version 1.6 - 2026-11-26.
 #
 
 
@@ -47,7 +47,7 @@ use POSIX qw(WNOHANG setsid);
 use Time::HiRes qw(sleep clock_gettime CLOCK_MONOTONIC alarm);
 use Errno qw(ENOENT);
 
-use constant VERSION => '1.5';
+use constant VERSION => '1.6';
 
 my $live_requested = 0;
 my $preview_requested = 0;
@@ -548,7 +548,10 @@ sub identity_stat {
 
 sub identity_unit {
     my ($v) = @_;
-    return undef unless $v && unit_definition_ok($v);
+    # Account discovery is independent of lifecycle/stop policy.
+    return undef unless $v && $v->{ok} && $v->{associated}
+        && ($v->{LoadState}//'') eq 'loaded'
+        && defined($v->{User}) && defined($v->{Group});
     my $u = $v->{User} || 'root';
     my @pw = $u =~ /\A\d+\z/ ? getpwuid($u) : getpwnam($u);
     return undef unless @pw;
@@ -591,6 +594,10 @@ sub installation_identity {
         if ($unit->{associated}//0) && ($unit->{ActiveState}//'') eq 'active' && !$unit->{confirmed};
     push @errors, 'Configured service account could not be resolved'
         if ($unit->{associated}//0) && ($unit->{LoadState}//'') eq 'loaded' && !$service;
+    if (($unit->{associated}//0) && ($unit->{LoadState}//'') eq 'loaded') {
+        my $problem = unit_definition_error($unit, 'spider');
+        push @errors, "Service control: $problem" if length $problem;
+    }
     push @errors, 'Installation account could not be resolved' unless $target && @account
         && defined(getgrgid($target->[1]));
     # Do not switch runtime identity or the recovery account behind the user's back.
@@ -2055,10 +2062,15 @@ sub resolve_service_inventory {
             next;
         }
         my $actual = unit_info($r, $name);
-        if (!unit_definition_ok($actual) || (selected_service_role($actual)//'') ne $r) {
-            push @block, "Unverified custom unit: $name";
+        if (!$actual->{ok} || !$actual->{associated} || ($actual->{LoadState}//'') ne 'loaded'
+            || (selected_service_role($actual)//'') ne $r) {
+            push @block, "Unverified custom unit: $name (association or status unavailable)";
             next;
         }
+        # Keep the observed account visible even when the operational policy
+        # blocks this otherwise unambiguously associated custom unit.
+        my $problem = unit_definition_error($actual, $r);
+        push @block, "Unverified custom unit: $name ($problem)" if length $problem;
         if (($u{$r}{LoadState}//'') ne 'not-found') {
             push @block, "Multiple or conflicting units for $r: $u{$r}{name}, $name";
             next;
@@ -2103,11 +2115,53 @@ sub known_unit_processes {
     return \%known;
 }
 
+# A process-only stop is accepted solely for a direct DXSpider entry point.
+# All other unit roles keep the original group-wide kill policy.
+sub unit_definition_error {
+    my ($v, $role) = @_;
+    return 'systemd status unavailable' unless $v->{ok};
+    return 'unit is not loaded' unless ($v->{LoadState}//'') eq 'loaded';
+    return 'unit is not associated with the selected installation' unless $v->{associated};
+    return 'unit definition could not be verified' unless $v->{unit_sha};
+    return 'NeedDaemonReload is not no' unless ($v->{NeedDaemonReload}//'') eq 'no';
+    my $kill = $v->{KillMode}//'';
+    return '' if $kill =~ /\A(?:control-group|mixed)\z/;
+    if ($kill eq 'process' && ($role//'') eq 'spider') {
+        for my $entry (service_entry_points($v)) {
+            next unless $entry->[1] eq 'spider';
+            my $tree = $entry->[0];
+            return '' if $tree eq $root || (realpath($tree)//'') eq $root;
+            # Same restricted alias exception as unit_info during rollback.
+            return '' if $tree eq '/spider' && $j
+                && ($j->{state}//'') eq 'ROLLING_BACK' && !exists_path($root)
+                && -l '/spider' && (readlink('/spider')//'') eq $root;
+        }
+        return 'KillMode=process requires a verified direct DXSpider entry point';
+    }
+    return 'unsupported KillMode='.(length($kill) ? $kill : '(unknown)');
+}
+
 sub unit_definition_ok {
-    my ($v) = @_;
-    return $v->{ok} && ($v->{LoadState}//'') eq 'loaded' && $v->{associated} && $v->{unit_sha}
-    && ($v->{NeedDaemonReload}//'') eq 'no'
-        && ($v->{KillMode}//'') =~  /\A(?:control-group|mixed)\z/;
+    return unit_definition_error(@_) eq '';
+}
+
+# A process-only stop cannot be relied on to terminate any other member.
+# Refuse an active unit with additional processes BEFORE any service stops,
+# and repeat this check immediately before stopping DXSpider itself.
+sub unit_stop_error {
+    my ($v, $role) = @_;
+    my $problem = unit_definition_error($v, $role);
+    return $problem if length $problem;
+    return '' unless ($v->{KillMode}//'') eq 'process'
+        && ($v->{ActiveState}//'') eq 'active';
+    return 'process-only stop: MainPID identity not verified' unless $v->{confirmed};
+    my $members = unit_members($v);
+    my $pid = $v->{MainPID}//0;
+    return 'process-only stop: MainPID missing or changed in cgroup'
+        unless $pid && same($members->{$pid}, $v->{pid_start});
+    my @extra = sort {$a <=> $b} grep { $_ != $pid } keys %$members;
+    return 'process-only stop: additional cgroup PIDs: '.join(', ', @extra) if @extra;
+    return '';
 }
 
 sub unit_members {
@@ -2140,7 +2194,7 @@ sub manual_companion_safe {
     my ($v) = @_;
     return 0 unless $v->{ok};
     my $load = $v->{LoadState}//'';
-    return 0 unless $load eq 'not-found' || unit_definition_ok($v);
+    return 0 unless $load eq 'not-found' || unit_definition_ok($v, 'spider');
     return unit_stopped($v);
 }
 
@@ -2158,9 +2212,16 @@ sub host_inventory {
         printf "UNIT %s load=%s active=%s pid=%s associated=%d identity=%s\n", $v->{name},
             $v->{LoadState}//'unknown', $v->{ActiveState}//'unknown', $v->{MainPID}//0,
             $v->{associated}, $v->{confirmed}?'CONFIRMED':'NOT_CONFIRMED';
-        $blocked = 1 unless ($v->{LoadState}//'') eq 'not-found' || (unit_definition_ok($v)
+        $blocked = 1 unless ($v->{LoadState}//'') eq 'not-found' || (unit_definition_ok($v, $r)
             && ((($v->{ActiveState}//'') eq 'inactive' && unit_stopped($v))
             || (($v->{ActiveState}//'') eq 'active' && $v->{confirmed})));
+        if (($v->{LoadState}//'') eq 'loaded') {
+            my $problem = unit_stop_error($v, $r);
+            if (length $problem) {
+                print "SERVICE BLOCK $r: $problem\n";
+                $blocked = 1;
+            }
+        }
     }
     my $known = known_unit_processes(\%u);
     for my $q (unknown_writers($known, $root)) {
@@ -2453,12 +2514,12 @@ sub integration_check {
         my $ok = eval{
             my ($known, $check);
             my $v = $u->{$r};
-            if ($v->{confirmed} && unit_definition_ok($v)) {
+            if ($v->{confirmed} && unit_definition_ok($v, $r)) {
                 $known = unit_members($v);
                 $check = sub{
                     my $a = unit_info($r);
                     fail('unit changed during observation') unless $a->{confirmed}
-                        && unit_definition_ok($a) && same($a->{unit_sha}, $v->{unit_sha})
+                        && unit_definition_ok($a, $r) && same($a->{unit_sha}, $v->{unit_sha})
                         && unit_identity($a) eq unit_identity($v)
                 };
             }
@@ -2631,12 +2692,12 @@ sub probe_service {
 sub probe_unit {
     my ($r, $p, $v) = @_;
     fail("missing confirmed functional probe for $r") unless ref($p) eq 'HASH';
-    fail("unconfirmed unit for $r") unless unit_definition_ok($v) && $v->{confirmed};
+    fail("unconfirmed unit for $r") unless unit_definition_ok($v, $r) && $v->{confirmed};
     my $id = unit_identity($v);
     my $socket = require_listener($r, $p->{port}, unit_members($v));
     probe_service($r, $p);
     my $after = unit_info($r, $v->{name});
-    fail("unit changed during probe $r") unless unit_definition_ok($after) && $after->{confirmed}
+    fail("unit changed during probe $r") unless unit_definition_ok($after, $r) && $after->{confirmed}
         && same($after->{unit_sha}, $v->{unit_sha}) && unit_identity($after) eq $id;
     fail("listener changed during probe $r") unless require_listener($r, $p->{port},
         unit_members($after)) eq $socket;
@@ -3072,8 +3133,13 @@ sub manual_start {
 sub checked_unit {
     my ($r) = @_;
     my $v = unit_info($r, transaction_unit_name($r));
-    fail("unit $r changed or unconfirmed") unless unit_definition_ok($v) && same($v->{unit_sha},
+    my $problem = unit_definition_error($v, $r);
+    fail("unit $r changed or unconfirmed: $problem") if length $problem;
+    fail("unit $r changed or unconfirmed") unless same($v->{unit_sha},
         $j->{services}{$r}{unit_sha});
+    my $mode = $j->{services}{$r}{kill_mode};
+    fail("unit $r KillMode changed since preflight")
+        if defined($mode) && ($v->{KillMode}//'') ne $mode;
     return $v;
 }
 
@@ -3117,8 +3183,15 @@ sub adapter_stop {
     return if unit_stopped($v);
     fail("unsafe active identity $r") if $v->{ActiveState} eq 'active' && !$v->{confirmed};
     fail("unsafe transition $r") unless $v->{ActiveState} eq 'active' && $v->{confirmed};
+    my $problem = unit_stop_error($v, $r);
+    fail("$r: $problem") if length $problem;
     run('timeout', '90', 'systemctl', 'stop', transaction_unit_name($r));
-    fail("unit still running or not quiescent $r") unless unit_stopped(checked_unit($r));
+    my $after = checked_unit($r);
+    unless (unit_stopped($after)) {
+        my @remaining = sort {$a <=> $b} keys %{unit_members($after)};
+        fail("unit still running or not quiescent $r; remaining cgroup PIDs: "
+            .(@remaining ? join(', ', @remaining) : '(none detected)'));
+    }
 }
 
 sub adapter_start {
@@ -3194,7 +3267,8 @@ sub service_plan {
                 if ($a->{unit_info}) {
                     fail("service definition or identity changed: $r")
                         unless same($a->{unit_info}{unit_sha}, $v->{unit_sha})
-                        && unit_identity($a->{unit_info}) eq unit_identity($v);
+                        && unit_identity($a->{unit_info}) eq unit_identity($v)
+                        && ($a->{unit_info}{KillMode}//'') eq ($v->{KillMode}//'');
                 } elsif ($a->{manual}) {
                     my $g = $a->{manual_unit_guard};
                     fail('manual companion unit changed') unless $g
@@ -3236,9 +3310,13 @@ sub service_plan {
                 fail('manual and systemd DXSpider conflict or unsafe companion')
                     unless manual_companion_safe($v);
             } else {
+                if ($exists) {
+                    my $problem = unit_definition_error($v, $r);
+                    fail("unsafe unit state $r: $problem") if length $problem;
+                }
                 fail("unsafe unit state $r") unless $v->{ok} && ((!$exists
                     && ($v->{LoadState}//'') eq 'not-found' && unit_stopped($v)) || ($exists
-                    && unit_definition_ok($v) && (($active && $v->{confirmed})
+                    && unit_definition_ok($v, $r) && (($active && $v->{confirmed})
                     || (($v->{ActiveState}//'') eq 'inactive' && unit_stopped($v)))));
             }
             if ($r eq 'spider' && ($j->{normalize_update} || $j->{normalize_restore}) && $exists) {
@@ -3256,13 +3334,17 @@ sub service_plan {
                 next
             }
 
+            if ($exists) {
+                my $problem = unit_stop_error($v, $r);
+                fail("$r: $problem") if length $problem;
+            }
             fail("confirmed functional probe required for $r") if ($active || $desired)
                 && !$probes->{$r};
             probe_unit($r, $probes->{$r}, $v) if $active;
             $s{$r} = {exists => $exists?1:0, initial => $active?1:0, desired => $desired?1:0,
                 unit_name => $v->{name}, unit_sha => $v->{unit_sha}, initial_pid => $v->{MainPID},
                 initial_start => $v->{pid_start}, initial_identity => unit_identity($v),
-                probe => $probes->{$r}};
+                kill_mode => $v->{KillMode}, probe => $probes->{$r}};
         }
     }
     return \%s;
@@ -5219,9 +5301,16 @@ sub ui_services {
             $o->{state} = $r eq 'spider'?'Stopped / manual start pending':'Service not installed';
             $o->{after} = $r eq 'spider'?'Remain stopped; operator starts manually':'SKIPPED (no unit)'
         }
-        elsif ($load eq 'loaded' && unit_definition_ok($v) && (($active eq 'active'
+        elsif ($load eq 'loaded' && unit_definition_ok($v, $r) && (($active eq 'active'
             && $v->{confirmed})
             || ($active eq 'inactive' && unit_stopped($v)))) {
+            my $problem = unit_stop_error($v, $r);
+            if (length $problem) {
+                $o->{state} = 'Unsafe service stop';
+                push @block, "$label: $problem";
+                $s{$r} = $o;
+                next;
+            }
             $o->{state} = $active eq 'active'?"Running (systemd, PID $v->{MainPID})":'Stopped (systemd)';
             $o->{after} = $r eq 'spider'
                 && $active ne 'active'?'Remain stopped':$active eq 'active'?'Restart existing service':'Start existing service';
@@ -5233,7 +5322,8 @@ sub ui_services {
         }
         else {
             $o->{state} = "Unverified unit ($load/$active)";
-            push @block, "$label unit state not verified"
+            my $problem = unit_definition_error($v, $r);
+            push @block, length($problem) ? "$label: $problem" : "$label unit state not verified"
         }
         $s{$r} = $o;
     }
@@ -5858,7 +5948,8 @@ sub ui_execute_staged {
             } elsif ($a->{unit_info}) {
                 fail('unit identity changed') unless $b->{unit_info}
                     && unit_identity($a->{unit_info}) eq unit_identity($b->{unit_info})
-                    && same($a->{unit_info}{unit_sha}, $b->{unit_info}{unit_sha});
+                    && same($a->{unit_info}{unit_sha}, $b->{unit_info}{unit_sha})
+                    && ($a->{unit_info}{KillMode}//'') eq ($b->{unit_info}{KillMode}//'');
             }
         }
         $manual_launch_dir = $services->{roles}{spider}{manual}?"$root/perl":'';
@@ -7299,7 +7390,7 @@ sub interactive {
 
 sub usage {
     print <<'HELP';
-DXSpider Manager 1.5 — interactive install, update and restore
+DXSpider Manager 1.6 — interactive install, update and restore
   perl dxspider-manager.pl            Production menu; root and terminal required
   perl dxspider-manager.pl --preview  Preparation only (no service actions)
   perl dxspider-manager.pl --live     Explicit production mode (compatibility)
